@@ -12,8 +12,9 @@ ServerManager::ServerManager(QObject *parent)
     connect(m_emby, &EmbyClient::tokenExpired, this, &ServerManager::onTokenExpired);
 
     m_emby->setSkipSslVerify(m_settings->skipSslVerify());
-    connect(m_settings, &SettingsStore::skipSslVerifyChanged,
-            m_emby, &EmbyClient::setSkipSslVerify);
+    connect(m_settings, &SettingsStore::skipSslVerifyChanged, this, [this] {
+        m_emby->setSkipSslVerify(m_settings->skipSslVerify());
+    });
 }
 
 ServerManager::~ServerManager() = default;
