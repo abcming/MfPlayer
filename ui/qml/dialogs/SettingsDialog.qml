@@ -261,6 +261,41 @@ StyledPopup {
                                 }
                             }
 
+                            // Graphics API (requires restart)
+                            Column { width: parent.width; spacing: 4
+                                Label { text: "Graphics API（重启后生效）"; color: Theme.textSecondary; font.pixelSize: 12 }
+                                Row { spacing: 4
+                                    Repeater {
+                                        model: [
+                                            { name: "Auto",   value: 0 },
+                                            { name: "D3D11",  value: 1 },
+                                            { name: "Vulkan", value: 2 },
+                                            { name: "OpenGL", value: 3 }
+                                        ]
+                                        delegate: Item {
+                                            required property var modelData
+                                            readonly property int _val: modelData.value
+                                            readonly property string _name: modelData.name
+                                            width: _gpuLbl.implicitWidth + 20; height: 30
+                                            Rectangle {
+                                                anchors.fill: parent; radius: 15
+                                                color: Server.settings.graphicsApi === parent._val ? Theme.active : "transparent"
+                                            }
+                                            Label {
+                                                id: _gpuLbl; anchors.centerIn: parent; font.pixelSize: 12
+                                                text: parent._name
+                                                color: Server.settings.graphicsApi === parent._val ? Theme.primary : Theme.textSecondary
+                                                font.bold: Server.settings.graphicsApi === parent._val
+                                            }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                onClicked: Server.settings.graphicsApi = parent._val
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             // SSL
                             RowLayout { width: parent.width; height: 32; spacing: 8
                                 CheckBox {

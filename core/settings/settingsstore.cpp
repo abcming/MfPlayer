@@ -189,6 +189,16 @@ void SettingsStore::setSkipSslVerify(bool v) {
     }
 }
 
+int SettingsStore::graphicsApi() const {
+    return m_settings.value("render/graphicsApi", 0).toInt();
+}
+void SettingsStore::setGraphicsApi(int v) {
+    if (v != graphicsApi()) {
+        m_settings.setValue("render/graphicsApi", v);
+        emit graphicsApiChanged();
+    }
+}
+
 void SettingsStore::saveLogin(const QString &server, const QString &username,
                                const QString &token, const QString &userId) {
     setEmbyServer(server);

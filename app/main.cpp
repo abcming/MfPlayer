@@ -18,6 +18,7 @@
 #include "core/playback/playbackcontroller.h"
 #include "core/library/librarybrowser.h"
 #include "core/detail/detailmanager.h"
+#include "core/settings/settingsstore.h"
 #include "core/server/servermanager.h"
 
 #ifdef Q_OS_WIN
@@ -45,11 +46,25 @@ int main(int argc, char *argv[]) {
                                   QColorSpace::TransferFunction::St2084));
   QSurfaceFormat::setDefaultFormat(fmt);
 
+  // Graphics API selection (0=auto, 1=D3D11, 2=Vulkan, 3=OpenGL).
+  // Must be set before any QQuickWindow is created — restart required on change.
+  {
+    SettingsStore tmpSettings;
+    int api = tmpSettings.graphicsApi();
+    switch (api) {
+    case 1: QQuickWindow::setGraphicsApi(QSGRendererInterface::Direct3D11); break;
+    case 2: QQuickWindow::setGraphicsApi(QSGRendererInterface::Vulkan);     break;
+    case 3: QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);     break;
+    default:
 #ifdef Q_OS_WIN
-  QQuickWindow::setGraphicsApi(QSGRendererInterface::Direct3D11);
+      QQuickWindow::setGraphicsApi(QSGRendererInterface::Direct3D11);
 #else
-  QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+      QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 #endif
+      break;
+    }
+    qDebug() << "Graphics API:" << QQuickWindow::graphicsApi();
+  }
   QQuickStyle::setStyle("Fusion");
 
   QGuiApplication app(argc, argv);

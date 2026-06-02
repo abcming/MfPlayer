@@ -29,6 +29,7 @@ class SettingsStore : public QObject {
     Q_PROPERTY(int keyVolumeUp READ keyVolumeUp WRITE setKeyVolumeUp NOTIFY keyBindingsChanged)
     Q_PROPERTY(int keyVolumeDown READ keyVolumeDown WRITE setKeyVolumeDown NOTIFY keyBindingsChanged)
     Q_PROPERTY(bool skipSslVerify READ skipSslVerify WRITE setSkipSslVerify NOTIFY skipSslVerifyChanged)
+    Q_PROPERTY(int graphicsApi READ graphicsApi WRITE setGraphicsApi NOTIFY graphicsApiChanged)
 
 public:
     explicit SettingsStore(QObject *parent = nullptr);
@@ -95,6 +96,9 @@ public:
     bool skipSslVerify() const;
     void setSkipSslVerify(bool v);
 
+    int graphicsApi() const;
+    void setGraphicsApi(int v);
+
     Q_INVOKABLE void saveLogin(const QString &server, const QString &username,
                                const QString &token, const QString &userId);
 
@@ -115,6 +119,7 @@ signals:
     void seekBackwardStepChanged();
     void keyBindingsChanged();
     void skipSslVerifyChanged();
+    void graphicsApiChanged();
 
 private:
     QSettings m_settings;
