@@ -34,6 +34,7 @@ public:
     CurlEngine &operator=(const CurlEngine &) = delete;
 
     void setMaxConnections(long n);
+    void setSkipSslVerify(bool skip);
 
     CurlHandle get (const QString &url, const Headers &headers, Callback cb, long timeoutSecs = 30);
     CurlHandle post(const QString &url, const Headers &headers, const QByteArray &body, Callback cb, long timeoutSecs = 30);
@@ -63,6 +64,7 @@ private:
     QTimer          m_timer;
     QHash<CURL*, Task*> m_tasks;
     QByteArray      m_caPath;
+    bool            m_skipSslVerify = false;
 };
 
 class CurlHandle

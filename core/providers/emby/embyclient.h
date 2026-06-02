@@ -48,6 +48,7 @@ public:
     Q_INVOKABLE void setServer(const QString &url);
     Q_INVOKABLE void setAuth(const QString &token, const QString &userId);
     Q_INVOKABLE void logout();
+    void setSkipSslVerify(bool skip);
 
     // Resolve a relative API path to full URL (e.g. "/emby/Items/..." → "http://server/emby/Items/...")
     Q_INVOKABLE QString imageUrl(const QString &relativePath) const {

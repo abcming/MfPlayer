@@ -41,6 +41,7 @@ QtObject {
     readonly property string svrPlayLocalFile: "播放本地文件"
     readonly property string svrRefreshCache: "刷新缓存"
     readonly property string svrDisconnect: "退出登录"
+    readonly property string svrSkipSslVerify: "跳过 SSL 证书验证"
     readonly property string hdrPeakBrightness: "HDR 峰值亮度"
     readonly property string svrDefaultUser: "用户"
     readonly property string svrNotLoggedIn: "未登录"

@@ -258,6 +258,21 @@ StyledPopup {
                                 }
                             }
 
+                            // SSL
+                            RowLayout { width: parent.width; height: 32; spacing: 8
+                                CheckBox {
+                                    id: _sslSkip
+                                    checked: Server.settings.skipSslVerify
+                                    onCheckedChanged: Server.settings.skipSslVerify = checked
+                                }
+                                Label {
+                                    text: Str.svrSkipSslVerify
+                                    color: Theme.textSecondary; font.pixelSize: 12
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                            }
+
                             Rectangle { width: parent.width; height: 1; color: Theme.active }
 
                             // About

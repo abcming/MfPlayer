@@ -10,6 +10,10 @@ ServerManager::ServerManager(QObject *parent)
     m_creds = new CredentialStore(m_cache->database(), this);
     connect(m_emby, &EmbyClient::librariesFetched, this, &ServerManager::onLibrariesFetched);
     connect(m_emby, &EmbyClient::tokenExpired, this, &ServerManager::onTokenExpired);
+
+    m_emby->setSkipSslVerify(m_settings->skipSslVerify());
+    connect(m_settings, &SettingsStore::skipSslVerifyChanged,
+            m_emby, &EmbyClient::setSkipSslVerify);
 }
 
 ServerManager::~ServerManager() = default;

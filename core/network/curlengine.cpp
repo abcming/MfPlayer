@@ -86,6 +86,11 @@ void CurlEngine::setMaxConnections(long n)
     curl_multi_setopt(m_multi, CURLMOPT_MAX_TOTAL_CONNECTIONS, n);
 }
 
+void CurlEngine::setSkipSslVerify(bool skip)
+{
+    m_skipSslVerify = skip;
+}
+
 // ── 公开方法 ──────────────────────────────────
 
 CurlHandle CurlEngine::get(const QString &url, const Headers &headers, Callback cb, long timeoutSecs)
@@ -143,6 +148,11 @@ CurlHandle CurlEngine::send(const QByteArray &method, const QString &url,
 #else
     curl_easy_setopt(easy, CURLOPT_CAINFO, "/etc/ssl/certs/ca-certificates.crt");
 #endif
+
+    if (m_skipSslVerify) {
+        curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(easy, CURLOPT_SSL_VERIFYHOST, 0L);
+    }
 
     curl_easy_setopt(easy, CURLOPT_PRIVATE,       task);
     curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, writeCb);

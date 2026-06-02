@@ -79,6 +79,10 @@ void EmbyClient::login(const QString &username, const QString &password) {
     });
 }
 
+void EmbyClient::setSkipSslVerify(bool skip) {
+    m_curl->setSkipSslVerify(skip);
+}
+
 void EmbyClient::logout() {
     m_accessToken.clear();
     m_userId.clear();

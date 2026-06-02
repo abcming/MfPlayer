@@ -179,6 +179,16 @@ void SettingsStore::setKeyVolumeUp(int v) { if (v != keyVolumeUp()) { m_settings
 int SettingsStore::keyVolumeDown() const { return m_settings.value("keys/volumeDown", 0x01000013).toInt(); }
 void SettingsStore::setKeyVolumeDown(int v) { if (v != keyVolumeDown()) { m_settings.setValue("keys/volumeDown", v); emit keyBindingsChanged(); } }
 
+bool SettingsStore::skipSslVerify() const {
+    return m_settings.value("network/skipSslVerify", false).toBool();
+}
+void SettingsStore::setSkipSslVerify(bool v) {
+    if (v != skipSslVerify()) {
+        m_settings.setValue("network/skipSslVerify", v);
+        emit skipSslVerifyChanged();
+    }
+}
+
 void SettingsStore::saveLogin(const QString &server, const QString &username,
                                const QString &token, const QString &userId) {
     setEmbyServer(server);
