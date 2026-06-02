@@ -110,22 +110,22 @@ void VideoRenderNode::render(const RenderState *state) {
     if (rhi->backend() == QRhi::Vulkan) {
         win->beginExternalCommands();
 
-        // Resolve the current render target to a VkImage.  Qt's Vulkan
-        // swapchain uses QRhiTextureRenderTarget with the color attachment
-        // wrapping a swapchain VkImage or a QRhiTexture backed by one.
+        // Grab the swapchain's current frame render target. This is a
+        // QRhiTextureRenderTarget wrapping the backbuffer VkImage.
+        QRhiSwapChain *sc = win->swapChain();
         QRhiTexture *colorTex = nullptr;
         QSize rtSize = st.nodeSize;
 
-        QRhiRenderTarget *rt = win->renderTarget();
-        // Qt 6 swapchain render targets subclass QRhiTextureRenderTarget.
-        // Use resourceType() to be safe rather than relying on static_cast.
-        if (rt && rt->resourceType() == QRhiResource::TextureRenderTarget) {
-            auto *trt = static_cast<QRhiTextureRenderTarget *>(rt);
-            const auto desc = trt->description();
-            auto it = desc.cbeginColorAttachments();
-            if (it != desc.cendColorAttachments() && it->texture()) {
-                colorTex = it->texture();
-                rtSize = it->texture()->pixelSize();
+        if (sc) {
+            QRhiRenderTarget *rt = sc->currentFrameRenderTarget();
+            if (rt && rt->resourceType() == QRhiResource::TextureRenderTarget) {
+                auto *trt = static_cast<QRhiTextureRenderTarget *>(rt);
+                const auto desc = trt->description();
+                auto it = desc.cbeginColorAttachments();
+                if (it != desc.cendColorAttachments() && it->texture()) {
+                    colorTex = it->texture();
+                    rtSize = it->texture()->pixelSize();
+                }
             }
         }
 
@@ -144,20 +144,15 @@ void VideoRenderNode::render(const RenderState *state) {
         }
 
         // Map QRhiTexture::Format → VkFormat for common swapchain formats.
-        auto toVkFormat = [](QRhiTexture::Format f) -> VkFormat {
-            switch (f) {
-            case QRhiTexture::RGBA8:      return VK_FORMAT_R8G8B8A8_UNORM;
-            case QRhiTexture::BGRA8:      return VK_FORMAT_B8G8R8A8_UNORM;
-            case QRhiTexture::RGBA8_SRGB: return VK_FORMAT_R8G8B8A8_SRGB;
-            case QRhiTexture::RGBA16F:    return VK_FORMAT_R16G16B16A16_SFLOAT;
-            case QRhiTexture::RGB10A2:    return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
-            default:                      return VK_FORMAT_UNDEFINED;
-            }
-        };
-        VkFormat vkFmt = toVkFormat(colorTex->format());
-        if (vkFmt == VK_FORMAT_UNDEFINED) {
-            // Fallback: most SDR swapchains use BGRA8.
-            vkFmt = VK_FORMAT_B8G8R8A8_UNORM;
+        // Qt 6.11 doesn't expose SRGB formats in the public enum, so default
+        // to BGRA8 which covers the vast majority of SDR swapchains.
+        VkFormat vkFmt;
+        switch (colorTex->format()) {
+        case QRhiTexture::RGBA16F:  vkFmt = VK_FORMAT_R16G16B16A16_SFLOAT; break;
+        case QRhiTexture::RGB10A2:  vkFmt = VK_FORMAT_A2B10G10R10_UNORM_PACK32; break;
+        case QRhiTexture::RGBA8:    vkFmt = VK_FORMAT_R8G8B8A8_UNORM; break;
+        case QRhiTexture::BGRA8:
+        default:                    vkFmt = VK_FORMAT_B8G8R8A8_UNORM; break;
         }
 
         mpv_vulkan_fbo fbo{};

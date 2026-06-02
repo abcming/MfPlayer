@@ -136,12 +136,14 @@ if (-not (Test-Path "$DepsDir/vulkan-1.dll")) {
     }
 }
 
-# Ensure render_vulkan.h is installed (meson may miss it on first build)
-$RenderVulkanH = "$MpvSource/include/mpv/render_vulkan.h"
+# Ensure updated render API headers are installed (meson may miss them)
 $HeadersDir = "$InstallDir/include/mpv"
-if (Test-Path $RenderVulkanH) {
-    Copy-Item $RenderVulkanH $HeadersDir -Force
-    Write-Host "Copied render_vulkan.h to install" -ForegroundColor Green
+foreach ($h in @("render.h", "render_vulkan.h")) {
+    $src = "$MpvSource/include/mpv/$h"
+    if (Test-Path $src) {
+        Copy-Item $src $HeadersDir -Force
+        Write-Host "Copied $h to install" -ForegroundColor Green
+    }
 }
 
 Write-Host "`n=== Done! ===" -ForegroundColor Green
