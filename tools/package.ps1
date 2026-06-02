@@ -123,7 +123,7 @@ if (Test-Path $SqlSrc) {
 }
 
 # ── Copy libmpv + deps ──
-Write-Host "[3/6] Copying libmpv..."
+Write-Host "[3/7] Copying libmpv..."
 $MpvDir = "$ProjectDir\third_party\mpv-msvc"
 Copy-Item "$MpvDir\bin\mpv-2.dll" $DeployDir
 if (Test-Path "$MpvDir\lib\deps") {
@@ -133,7 +133,7 @@ if (Test-Path "$MpvDir\lib\deps") {
 }
 
 # ── MSVC runtime ──
-Write-Host "[4/6] Checking MSVC runtime..."
+Write-Host "[4/7] Checking MSVC runtime..."
 $vcruntime = Get-ChildItem $DeployDir -Filter "VCRUNTIME*.dll" -ErrorAction SilentlyContinue
 $msvcp = Get-ChildItem $DeployDir -Filter "MSVCP*.dll" -ErrorAction SilentlyContinue
 if (-not $vcruntime -or -not $msvcp) {
@@ -159,7 +159,7 @@ if (-not $vcruntime -or -not $msvcp) {
 }
 
 # ── Copy fonts ──
-Write-Host "[5/6] Copying fonts..."
+Write-Host "[5/7] Copying fonts..."
 $FontSrc = "$ProjectDir\resources\fonts"
 if (Test-Path $FontSrc) {
     Copy-Item -Recurse $FontSrc "$DeployDir\fonts"
@@ -167,8 +167,75 @@ if (Test-Path $FontSrc) {
     Write-Host "  $fontCount font files"
 }
 
+# ── Resolve missing Qt DLLs (transitive dependencies) ──
+# After windeployqt6, scan every DLL in deploy with dumpbin and auto-copy
+# any missing Qt dependency from the Qt install. Loop until stable.
+Write-Host "[6/7] Resolving transitive dependencies..."
+$dumpbin = Get-Command dumpbin -ErrorAction SilentlyContinue
+if (-not $dumpbin) {
+    # Try VS dev prompt paths
+    $vsPaths = @(
+        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
+        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
+        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe"
+    )
+    foreach ($p in $vsPaths) {
+        $found = Get-ChildItem $p -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { $dumpbin = $found.FullName; break }
+    }
+}
+if ($dumpbin) {
+    Write-Host "  dumpbin: $dumpbin"
+    $pass = 0
+    $anyCopied = $true
+    while ($anyCopied -and $pass -lt 5) {
+        $pass++
+        $anyCopied = $false
+        $allBin = Get-ChildItem $DeployDir -Recurse -Include *.dll,*.exe
+        # Collect all known filenames in deploy
+        $known = @{}
+        foreach ($f in $allBin) { $known[$f.Name.ToLower()] = $true }
+        # Also check subdirectories (plugins)
+        foreach ($f in (Get-ChildItem $DeployDir -Recurse -Include *.dll)) {
+            $known[$f.Name.ToLower()] = $true
+        }
+        foreach ($f in $allBin) {
+            if ($f.Name -match '^(VCRUNTIME|MSVCP|CONCRT|api-ms-|ext-ms-)') { continue }
+            $deps = & $dumpbin /dependents $f.FullName 2>$null |
+                Select-String '^\s{4}(\S+\.dll)' |
+                ForEach-Object { $_.Matches.Groups[1].Value.ToLower() }
+            foreach ($dep in $deps) {
+                # Skip Windows system DLLs
+                if ($dep -match '^(kernel32|user32|gdi32|shell32|ole32|comdlg32|advapi32|ws2_32|d3d11|dxgi|dwmapi|d3dcompiler|opengl32|bcrypt|crypt32|secur32|ncrypt|ntdll|msvcrt|ucrtbase|combase|shlwapi|oleaut32|winmm|winhttp|mswsock|iphlpapi|dnsapi|powrprof|propsys|setupapi|cfgmgr32|rpcrt4|kernelbase|imm32|version|gdi32full|win32u|bcryptprimitives|userenv|wtsapi32|shcore|d2d1|dwrite|msimg32|windows\.storage|twinapi)') { continue }
+                if ($known.ContainsKey($dep)) { continue }
+                # Search in Qt root to resolve it
+                $src = Get-ChildItem $QtRoot -Recurse -Filter $dep -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($src) {
+                    $destDir = Split-Path -Parent $f.FullName
+                    Copy-Item $src.FullName $destDir
+                    Write-Host "  + $dep  (needed by $($f.Name))"
+                    $known[$dep] = $true
+                    $anyCopied = $true
+                }
+            }
+        }
+    }
+    Write-Host "  Dependency scan complete ($pass pass(es))"
+} else {
+    Write-Host "  dumpbin not found, copying all Qt DLLs as fallback..."
+    Get-ChildItem "$QtRoot\bin\Qt6*.dll" | ForEach-Object {
+        if (-not (Test-Path "$DeployDir\$($_.Name)")) {
+            Copy-Item $_.FullName $DeployDir
+            Write-Host "  + $($_.Name)"
+        }
+    }
+}
+
 # ── Smoke test: check the things windeployqt6 might have missed ──
-Write-Host "[6/6] Quick smoke test..."
+Write-Host "[7/7] Quick smoke test..."
 $checks = @(
     @{Name="QML Controls"; Path="$DeployDir\qml\QtQuick\Controls"; MustExist=$true},
     @{Name="VectorImage"; Path="$DeployDir\qml\QtQuick\VectorImage"; MustExist=$true},
@@ -189,9 +256,7 @@ foreach ($c in $checks) {
 }
 if (-not $ok) {
     Write-Host ""
-    Write-Host "  CRITICAL: Required modules missing! Do this first:" -ForegroundColor Red
-    Write-Host "    cd $QtRoot\qml\QtQuick\VectorImage" -ForegroundColor Yellow
-    Write-Host "    dir" -ForegroundColor Yellow
+    Write-Host "  CRITICAL: Required modules missing!" -ForegroundColor Red
 }
 
 # ── Compile installer (Inno Setup) ──
