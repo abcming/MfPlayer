@@ -4,7 +4,7 @@ Emby desktop media player powered by Qt 6 QML + libmpv.
 
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![License](https://img.shields.io/badge/license-GPLv3-green)
-![Qt](https://img.shields.io/badge/Qt-6.11-green)
+![Qt](https://img.shields.io/badge/Qt-6.8-green)
 
 ## Features
 
