@@ -71,7 +71,7 @@ Creates a portable zip in `deploy/`.
 
 ## Dependencies
 
-- Qt 6.11+ (Quick, Qml, QuickControls2, Network, OpenGL, Sql, ShaderTools)
+- Qt 6.8+ (Quick, Qml, QuickControls2, Network, OpenGL, Sql, ShaderTools)
 - libmpv (D3D11 render API fork)
 - libcurl (HTTP/2)
 - D3D11 (Windows SDK)
