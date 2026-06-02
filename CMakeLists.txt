@@ -201,7 +201,7 @@ endif()
 
 set_target_properties(mfplayer_app PROPERTIES
     OUTPUT_NAME "MfPlayer"
-    WIN32_EXECUTABLE TRUE
+    # WIN32_EXECUTABLE TRUE
 )
 
 add_custom_command(TARGET mfplayer_app POST_BUILD

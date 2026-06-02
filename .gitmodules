@@ -1,0 +1,4 @@
+[submodule "third_party/mpv-source"]
+	path = third_party/mpv-source
+	url = git@github.com:abcming/mpv.git
+	branch = d3d11-render-api
