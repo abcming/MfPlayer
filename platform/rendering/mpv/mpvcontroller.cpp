@@ -58,6 +58,9 @@ MpvController::MpvController(QObject *parent)
 
     mpv_set_option_string(m_mpv, "user-agent", MFPLAYER_USER_AGENT);
 
+    // Route mpv log messages to Qt debug output (visible in DebugView / Qt Creator)
+    mpv_request_log_messages(m_mpv, "warn");
+
     if (mpv_initialize(m_mpv) < 0) {
         qWarning() << "MpvController: mpv_initialize failed";
         mpv_set_wakeup_callback(m_mpv, nullptr, nullptr);
@@ -466,6 +469,11 @@ void MpvController::onMpvEvents() {
             m_playing = false;
             emit playingChanged();
             break;
+        case MPV_EVENT_LOG_MESSAGE: {
+            auto *msg = static_cast<mpv_event_log_message *>(event->data);
+            qDebug() << "[mpv" << msg->prefix << msg->level << "]" << msg->text;
+            break;
+        }
         default:
             break;
         }

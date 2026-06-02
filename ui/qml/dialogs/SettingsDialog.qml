@@ -100,9 +100,12 @@ StyledPopup {
             root.listeningKey = ""
         }
 
-        ColumnLayout {
+        HdrPqOverlay {
             anchors.fill: parent
-            spacing: 0
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 0
 
             // ── Header ──
             Rectangle {
@@ -420,7 +423,8 @@ StyledPopup {
                     }
                 }
             }
-        }
+            }  // ColumnLayout
+        }  // HdrPqOverlay
     }
 
     onListeningKeyChanged: { if (root.listeningKey !== "") _capTimer.start() }

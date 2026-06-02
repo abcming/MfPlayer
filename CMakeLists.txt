@@ -143,6 +143,7 @@ qt_add_qml_module(mfplayer_app
         ui/qml/components/CastAndCrewRow.qml
         ui/qml/components/MediaInfoSection.qml
         ui/qml/components/SeriesSection.qml
+        ui/qml/components/HdrPqOverlay.qml
         ui/qml/components/PlayControlsRow.qml
         ${GENERATED_ICON_QMLS}
     RESOURCES
@@ -154,6 +155,8 @@ qt6_add_shaders(mfplayer_app "mfplayer-shaders"
     BASE "ui/qml/shaders"
     FILES
         ui/qml/shaders/roundedmask.frag
+        ui/qml/shaders/hdr_pq.vert
+        ui/qml/shaders/hdr_pq.frag
 )
 
 target_include_directories(mfplayer_app PRIVATE ${CMAKE_SOURCE_DIR})
@@ -203,7 +206,7 @@ endif()
 
 set_target_properties(mfplayer_app PROPERTIES
     OUTPUT_NAME "MfPlayer"
-    WIN32_EXECUTABLE TRUE
+    # WIN32_EXECUTABLE TRUE
 )
 
 add_custom_command(TARGET mfplayer_app POST_BUILD

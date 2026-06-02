@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 
-Item {
+HdrPqOverlay {
     id: browseRoot
 
     property string currentView: "home"

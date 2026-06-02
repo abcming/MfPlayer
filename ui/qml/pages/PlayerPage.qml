@@ -173,7 +173,8 @@ Item {
     }
 
     // ── Top hover container (always visible) ──
-    Item {
+    HdrPqOverlay {
+        id: topOverlay
         anchors { left: parent.left; right: parent.right; top: parent.top }
         height: 56 + 60
         z: 2
@@ -660,7 +661,8 @@ Item {
     }
 
     // ── Bottom hover container (always visible) ──
-    Item {
+    HdrPqOverlay {
+        id: bottomOverlay
         anchors {
             bottom: parent.bottom
             left: parent.left

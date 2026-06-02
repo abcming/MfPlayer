@@ -10,6 +10,7 @@
 #include <QTimer>
 #include <QColorSpace>
 #include <QSurfaceFormat>
+#include <rhi/qrhi.h>
 #ifdef Q_OS_WIN
 #include <dwmapi.h>
 #endif
@@ -40,7 +41,8 @@ int main(int argc, char *argv[]) {
   fmt.setGreenBufferSize(16);
   fmt.setBlueBufferSize(16);
   fmt.setAlphaBufferSize(0);
-  fmt.setColorSpace(QColorSpace::Bt2020);
+  fmt.setColorSpace(QColorSpace(QColorSpace::Primaries::Bt2020,
+                                  QColorSpace::TransferFunction::St2084));
   QSurfaceFormat::setDefaultFormat(fmt);
 
 #ifdef Q_OS_WIN
@@ -111,6 +113,9 @@ int main(int argc, char *argv[]) {
   for (auto *obj : qmlEngine.rootObjects()) {
     if (auto *win = qobject_cast<QQuickWindow *>(obj)) {
       win->setPersistentGraphics(true);
+      // Request HDR swapchain via Qt 6.11 QRhi — must be set before scene graph init.
+      // Uses 10-bit Rec.2020 PQ (R10G10B10A2) to match mpv's target-trc=pq target-prim=bt.2020.
+      win->setProperty("_qt_sg_hdr_format", "hdr10");
       playbackCtrl->setRootWindow(win);
       rootWin = win;
 #ifdef Q_OS_WIN
@@ -126,6 +131,17 @@ int main(int argc, char *argv[]) {
         rootWin->showFullScreen();
         QCoreApplication::processEvents();
         rootWin->showNormal();
+    });
+
+    // Detect actual swapchain HDR status after warmup creates it.
+    // Qt silently falls back to SDR on non-HDR systems even with _qt_sg_hdr_format set.
+    QTimer::singleShot(300, rootWin, [rootWin, &qmlEngine]() {
+        bool hdr = false;
+        if (auto *sc = rootWin->swapChain()) {
+            hdr = sc->format() != QRhiSwapChain::SDR;
+        }
+        qmlEngine.rootContext()->setContextProperty("_hdrActive", hdr);
+        qDebug() << "HDR swapchain active:" << hdr;
     });
   }
 

@@ -3,7 +3,7 @@ import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Item {
+HdrPqOverlay {
     id: detailRoot
     readonly property int kResumeThresholdTicks: 300000000
 

@@ -170,8 +170,28 @@ ApplicationWindow {
             border { color: Theme.active; width: 1 }
         }
 
-        contentItem: ColumnLayout {
-            spacing: 0
+        contentItem: Item {
+            layer.enabled: typeof _hdrActive !== "undefined" && _hdrActive
+            layer.format: ShaderEffectSource.RGBA16F
+            layer.effect: ShaderEffect {
+                property real sdrWhiteNits: 203
+                vertexShader: "qrc:/qt/qml/mfplayer/hdr_pq.vert.qsb"
+                fragmentShader: "qrc:/qt/qml/mfplayer/hdr_pq.frag.qsb"
+            }
+
+            implicitHeight: {
+                var h = 0
+                for (var i = 0; i < children.length; i++) {
+                    var c = children[i]
+                    if (!c.visible) continue
+                    var bh = c.y + (c.implicitHeight || 0)
+                    if (bh > h) h = bh
+                }
+                return h
+            }
+
+            ColumnLayout {
+                spacing: 0
 
             // Header
             Rectangle {
@@ -341,8 +361,9 @@ ApplicationWindow {
                         Server.connectEmby(serverField.text, userField.text, passField.text)
                     }
                 }
-            }
-        }
+            }  // Form ColumnLayout
+        }  // contentItem ColumnLayout
+        }  // wrapper Item
 
         Connections {
             target: Server
@@ -383,7 +404,27 @@ ApplicationWindow {
             border { color: Theme.active; width: 1 }
         }
 
-        contentItem: ColumnLayout {
+        contentItem: Item {
+            layer.enabled: typeof _hdrActive !== "undefined" && _hdrActive
+            layer.format: ShaderEffectSource.RGBA16F
+            layer.effect: ShaderEffect {
+                property real sdrWhiteNits: 203
+                vertexShader: "qrc:/qt/qml/mfplayer/hdr_pq.vert.qsb"
+                fragmentShader: "qrc:/qt/qml/mfplayer/hdr_pq.frag.qsb"
+            }
+
+            implicitHeight: {
+                var h = 0
+                for (var i = 0; i < children.length; i++) {
+                    var c = children[i]
+                    if (!c.visible) continue
+                    var bh = c.y + (c.implicitHeight || 0)
+                    if (bh > h) h = bh
+                }
+                return h
+            }
+
+            ColumnLayout {
             spacing: 0
 
             Rectangle {
@@ -433,7 +474,8 @@ ApplicationWindow {
 
                 onClicked: globalErrorDialog.close()
             }
-        }
+        }  // contentItem ColumnLayout
+        }  // wrapper Item
     }
 
     Connections {
