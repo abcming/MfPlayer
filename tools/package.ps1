@@ -74,6 +74,14 @@ if (Test-Path $VectorSrc) {
     Write-Host "  ERROR: QtQuick.VectorImage not found at $VectorSrc" -ForegroundColor Red
 }
 
+# VectorImage plugin needs Qt6Svg.dll at runtime (SVG rendering),
+# but windeployqt6 doesn't detect it because icons are pre-converted to QML Shape.
+$QtSvgDll = "$QtRoot\bin\Qt6Svg.dll"
+if (Test-Path $QtSvgDll) {
+    Copy-Item $QtSvgDll $DeployDir
+    Write-Host "  Qt6Svg.dll deployed"
+}
+
 # ── Copy Qt SQL plugin (C++ code uses SQLite, windeployqt6 can't detect C++ dependency) ──
 $SqlSrc = "$QtRoot\plugins\sqldrivers"
 $SqlDst = "$DeployDir\sqldrivers"
@@ -136,6 +144,7 @@ Write-Host "[6/6] Quick smoke test..."
 $checks = @(
     @{Name="QML Controls"; Path="$DeployDir\qml\QtQuick\Controls"; MustExist=$true},
     @{Name="VectorImage"; Path="$DeployDir\qml\QtQuick\VectorImage"; MustExist=$true},
+    @{Name="Qt6Svg.dll"; Path="$DeployDir\Qt6Svg.dll"; MustExist=$true},
     @{Name="SQL drivers"; Path="$DeployDir\sqldrivers"; MustExist=$true},
     @{Name="mfplayer plugin"; Path="$DeployDir\mfplayer"; MustExist=$true},
     @{Name="mpv-2.dll"; Path="$DeployDir\mpv-2.dll"; MustExist=$true}
