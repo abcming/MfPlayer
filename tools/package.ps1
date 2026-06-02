@@ -181,7 +181,7 @@ if ($Iscc -and (Test-Path $IssFile)) {
         Write-Host ""
         Write-Host "=== All done ===" -ForegroundColor Green
         Write-Host "Installer: $($setup.FullName)"
-        Write-Host "Size:      {0:N1} MB" -f ($setup.Length / 1MB)
+        Write-Host ("Size:      {0:N1} MB" -f ($setup.Length / 1MB))
     }
 } elseif (-not (Test-Path $IssFile)) {
     Write-Host "  Skipped: installer.iss not found" -ForegroundColor Yellow
