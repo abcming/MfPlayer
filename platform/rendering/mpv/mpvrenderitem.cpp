@@ -6,7 +6,13 @@ extern "C" {
 #ifdef Q_OS_WIN
 #include <mpv/render_d3d11.h>
 #endif
+#if __has_include(<mpv/render_vulkan.h>)
 #include <mpv/render_vulkan.h>
+#else
+// Fallback: mpv_vulkan_fbo struct (from render_vulkan.h)
+#define MPV_RENDER_PARAM_VULKAN_FBO ((mpv_render_param_type)25)
+struct mpv_vulkan_fbo { void *image; int format, usage; int w, h; };
+#endif
 }
 
 #include <QOpenGLContext>

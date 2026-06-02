@@ -8,7 +8,21 @@ extern "C" {
 #ifdef Q_OS_WIN
 #include <mpv/render_d3d11.h>
 #endif
+#if __has_include(<mpv/render_vulkan.h>)
 #include <mpv/render_vulkan.h>
+#else
+// Fallback when our fork's render_vulkan.h isn't installed
+#define MPV_RENDER_API_TYPE_VULKAN "vulkan"
+#define MPV_RENDER_PARAM_VULKAN_INIT_PARAMS ((mpv_render_param_type)24)
+#define MPV_RENDER_PARAM_VULKAN_FBO       ((mpv_render_param_type)25)
+#ifndef MPV_RENDER_PARAM_BACKEND
+#define MPV_RENDER_PARAM_BACKEND          ((mpv_render_param_type)23)
+#endif
+struct mpv_vulkan_init_params {
+    void *instance, *get_proc_addr, *phys_device, *device;
+    unsigned queue_family_index, queue_index;
+};
+#endif
 }
 
 #include <QOpenGLContext>
