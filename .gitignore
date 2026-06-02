@@ -1,0 +1,25 @@
+build/
+deploy/
+
+# Prebuilt mpv binaries (build from source with tools/build_mpv_msvc.ps1)
+# Keep include/ (custom header files) for compilation
+third_party/mpv-msvc/bin/
+third_party/mpv-msvc/lib/
+
+# Full mpv source (only needed for building mpv itself, not mfplayer)
+third_party/mpv-source/
+
+vcpkg_installed/
+
+# Local dev environment
+mutagen.yml
+mutagen.yml.lock
+CMakeFiles/
+
+# IDE / editor
+.vs/
+.vscode/
+*.user
+*.suo
+.DS_Store
+Thumbs.db

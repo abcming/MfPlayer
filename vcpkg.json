@@ -1,0 +1,19 @@
+{
+  "name": "mfplayer",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "pkgconf",
+    "curl",
+    "ffmpeg",
+    "libass",
+    "lcms",
+    "uchardet",
+    "shaderc",
+    "spirv-cross",
+    "libarchive",
+    "libpng",
+    "libjpeg-turbo",
+    "libwebp",
+    "luajit"
+  ]
+}

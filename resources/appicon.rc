@@ -1,0 +1,3 @@
+// Icon resource — bump BUILD for MSVC recompile when icon changes
+// BUILD 2
+IDI_ICON1 ICON "resources/appicon.ico"
