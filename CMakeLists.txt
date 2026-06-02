@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
 
-# vcpkg 支持：自动检测或手动指定工具链
-if(NOT CMAKE_TOOLCHAIN_FILE AND EXISTS "D:/vcpkg/scripts/buildsystems/vcpkg.cmake")
-    set(CMAKE_TOOLCHAIN_FILE "D:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "vcpkg toolchain" FORCE)
-    message(STATUS "Using vcpkg toolchain from D:/vcpkg")
+# vcpkg 支持：通过 VCPKG_ROOT 环境变量自动检测
+if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+    if(EXISTS "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "vcpkg toolchain" FORCE)
+        message(STATUS "Using vcpkg toolchain from $ENV{VCPKG_ROOT}")
+    endif()
 endif()
 
 project(MfPlayer VERSION 0.1.0 LANGUAGES CXX)
@@ -201,7 +203,7 @@ endif()
 
 set_target_properties(mfplayer_app PROPERTIES
     OUTPUT_NAME "MfPlayer"
-    # WIN32_EXECUTABLE TRUE
+    WIN32_EXECUTABLE TRUE
 )
 
 add_custom_command(TARGET mfplayer_app POST_BUILD

@@ -40,7 +40,8 @@ This builds libmpv from source with D3D11 render API support (PR #17764) and ins
 ### Build MfPlayer
 
 ```powershell
-cmake -G Ninja -S . -B build -DCMAKE_TOOLCHAIN_FILE=D:/vcpkg/scripts/buildsystems/vcpkg.cmake
+$env:VCPKG_ROOT = "D:/vcpkg"   # or wherever you installed vcpkg
+cmake -G Ninja -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 cmake --build build
 ```
 
