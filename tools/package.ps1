@@ -16,21 +16,49 @@ if (-not (Test-Path $Exe)) {
     exit 1
 }
 
+# ── Find Qt (windeployqt6) ──
+# Try PATH first, then auto-search common install locations
 $Windeployqt = Get-Command windeployqt6 -ErrorAction SilentlyContinue
 if (-not $Windeployqt) { $Windeployqt = Get-Command windeployqt -ErrorAction SilentlyContinue }
+
+if (-not $Windeployqt) {
+    # Auto-search: look in C:\Qt\ for the latest version
+    $qtBase = "${env:ProgramFiles}\Qt"
+    if (Test-Path "C:\Qt") { $qtBase = "C:\Qt" }
+    $qtVersions = Get-ChildItem $qtBase -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^\d+\.\d+' } |
+        Sort-Object { [version]$_.Name } -Descending
+    foreach ($ver in $qtVersions) {
+        foreach ($arch in @("msvc2022_64", "msvc2022_arm64", "mingw_64")) {
+            $candidate = Join-Path $ver.FullName "$arch\bin\windeployqt6.exe"
+            if (Test-Path $candidate) {
+                $Windeployqt = $candidate
+                break
+            }
+        }
+        if ($Windeployqt) { break }
+    }
+}
 if (-not $Windeployqt) {
     Write-Error @"
-windeployqt6 not found in PATH.
-Add your Qt bin directory, e.g.:
+windeployqt6 not found in PATH or C:\Qt\.
+Set `$env:PATH manually, e.g.:
   `$env:PATH = "C:\Qt\6.11.0\msvc2022_64\bin;`$env:PATH"
 "@
     exit 1
 }
 
+# Normalize: if $Windeployqt is a string (path), wrap it; if it's a command object, use .Source
+if ($Windeployqt -is [string]) {
+    $WindeployqtPath = $Windeployqt
+} else {
+    $WindeployqtPath = $Windeployqt.Source
+}
+
 Write-Host "=== Packaging MfPlayer (MSVC) ===" -ForegroundColor Cyan
 
 # Qt root = bin/.. (e.g. C:\Qt\6.11.0\msvc2022_64)
-$QtRoot = Split-Path -Parent (Split-Path -Parent $Windeployqt.Source)
+$QtRoot = Split-Path -Parent (Split-Path -Parent $WindeployqtPath)
 Write-Host "Qt root: $QtRoot"
 
 # ── Clean deploy dir ──
@@ -43,7 +71,7 @@ Write-Host "[1/6] MfPlayer.exe"
 
 # ── windeployqt6 ──
 Write-Host "[2/6] Collecting Qt dependencies..."
-& $Windeployqt.Source --qmldir "$ProjectDir\ui\qml" --no-translations --no-opengl-sw "$DeployDir\MfPlayer.exe"
+& $WindeployqtPath --qmldir "$ProjectDir\ui\qml" --no-translations --no-opengl-sw "$DeployDir\MfPlayer.exe"
 
 # ── qt.conf ──
 @"
