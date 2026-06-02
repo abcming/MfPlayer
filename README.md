@@ -25,7 +25,7 @@ Emby desktop media player powered by Qt 6 QML + libmpv.
 ### Prerequisites
 
 - Visual Studio 2022 (Community or above)
-- Qt 6.11+ (MSVC 2022 64-bit)
+- Qt 6.8+ (MSVC 2022 64-bit)
 - vcpkg
 - Git
 
