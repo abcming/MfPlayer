@@ -157,26 +157,6 @@ if (-not $ok) {
     Write-Host "    dir" -ForegroundColor Yellow
 }
 
-# ── Create zip ──
-Write-Host ""
-Write-Host "=== Creating archive ===" -ForegroundColor Cyan
-$ZipName = "MfPlayer-$(Get-Date -Format yyyyMMdd).zip"
-$ZipPath = "$ProjectDir\deploy\$ZipName"
-
-if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
-Start-Sleep -Seconds 1
-
-Compress-Archive -Path $DeployDir -DestinationPath $ZipPath -Force
-
-$size = "{0:N1} MB" -f ((Get-ChildItem $DeployDir -Recurse | Measure-Object Length -Sum).Sum / 1MB)
-
-Write-Host ""
-Write-Host "=== Done ===" -ForegroundColor Green
-Write-Host "Package: $ZipPath"
-Write-Host "Size:    $size"
-Write-Host ""
-Write-Host "Extract the zip and run MfPlayer.exe."
-
 # ── Compile installer (Inno Setup) ──
 Write-Host ""
 Write-Host "=== Compiling installer ===" -ForegroundColor Cyan
