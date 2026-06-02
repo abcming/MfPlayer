@@ -63,7 +63,6 @@ private:
     CURLM          *m_multi = nullptr;
     QTimer          m_timer;
     QHash<CURL*, Task*> m_tasks;
-    QByteArray      m_caPath;
     bool            m_skipSslVerify = false;
 };
 
