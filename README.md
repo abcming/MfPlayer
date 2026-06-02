@@ -78,7 +78,7 @@ Creates a portable zip in `deploy/`.
 
 ## License
 
-GPLv3 — see [LICENSE](LICENSE).
+GPLv3 — see [GPLv3](https://www.gnu.org/licenses/gpl-3.0.html).
 
 ## Credits
 
