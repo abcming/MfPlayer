@@ -1,5 +1,8 @@
 #include "curlengine.h"
+#include <QDir>
+#include <QFile>
 #include <QPointer>
+#include <QStandardPaths>
 
 // ─────────────────────────────────────────────
 // CurlResponse
@@ -46,6 +49,23 @@ CurlEngine::CurlEngine(QObject *parent)
 
     m_timer.setSingleShot(true);
     connect(&m_timer, &QTimer::timeout, this, &CurlEngine::tick);
+
+#ifdef Q_OS_WIN
+    // Extract CA bundle from Qt resources for non-Schannel SSL backends (e.g. OpenSSL).
+    // CURLSSLOPT_NATIVE_CA only works with Schannel; if vcpkg compiled curl with
+    // OpenSSL, we need an explicit CA file. Ship one baked into the exe.
+    QFile caRes(":/mfplayer/resources/cacert.pem");
+    if (caRes.open(QIODevice::ReadOnly)) {
+        QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+        QDir().mkpath(dir);
+        QString path = dir + "/cacert.pem";
+        QFile out(path);
+        if (out.open(QIODevice::WriteOnly)) {
+            out.write(caRes.readAll());
+            m_caPath = path.toUtf8();
+        }
+    }
+#endif
 }
 
 CurlEngine::~CurlEngine()
@@ -118,6 +138,8 @@ CurlHandle CurlEngine::send(const QByteArray &method, const QString &url,
 
 #ifdef Q_OS_WIN
     curl_easy_setopt(easy, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+    if (!m_caPath.isEmpty())
+        curl_easy_setopt(easy, CURLOPT_CAINFO, m_caPath.constData());
 #else
     curl_easy_setopt(easy, CURLOPT_CAINFO, "/etc/ssl/certs/ca-certificates.crt");
 #endif

@@ -145,6 +145,7 @@ qt_add_qml_module(mfplayer_app
         ${GENERATED_ICON_QMLS}
     RESOURCES
         resources/appicon.ico
+        resources/cacert.pem
 )
 
 qt6_add_shaders(mfplayer_app "mfplayer-shaders"
@@ -201,7 +202,7 @@ endif()
 
 set_target_properties(mfplayer_app PROPERTIES
     OUTPUT_NAME "MfPlayer"
-    # WIN32_EXECUTABLE TRUE
+    WIN32_EXECUTABLE TRUE
 )
 
 add_custom_command(TARGET mfplayer_app POST_BUILD
