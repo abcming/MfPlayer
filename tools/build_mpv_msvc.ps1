@@ -92,6 +92,7 @@ $MesonArgs = @(
     "-Dlibmpv=true",
     "-Dcplayer=false",
     "-Dd3d11=enabled",
+    "-Dvulkan=enabled",
     "-Dcplugins=disabled",
     "-Dtests=false",
     "-Djavascript=disabled",
@@ -122,8 +123,30 @@ $DepsDir = "$InstallDir/lib/deps"
 if (-not (Test-Path $DepsDir)) { New-Item -ItemType Directory -Path $DepsDir | Out-Null }
 Copy-Item "$VcpkgInstalled/bin/*.dll" $DepsDir -Force
 
+# Also deploy vulkan-1.dll from vcpkg installed or Vulkan SDK
+# (vcpkg's vulkan package provides the loader; SDK provides it as fallback)
+if (-not (Test-Path "$DepsDir/vulkan-1.dll")) {
+    $VkDll = "$VcpkgInstalled/bin/vulkan-1.dll"
+    if (-not (Test-Path $VkDll)) { $VkDll = "$env:VULKAN_SDK/Bin/vulkan-1.dll" }
+    if (Test-Path $VkDll) {
+        Copy-Item $VkDll $DepsDir -Force
+        Write-Host "Deployed vulkan-1.dll" -ForegroundColor Green
+    } else {
+        Write-Host "vulkan-1.dll not found — system GPU driver should provide it" -ForegroundColor Yellow
+    }
+}
+
+# Ensure render_vulkan.h is installed (meson may miss it on first build)
+$RenderVulkanH = "$MpvSource/include/mpv/render_vulkan.h"
+$HeadersDir = "$InstallDir/include/mpv"
+if (Test-Path $RenderVulkanH) {
+    Copy-Item $RenderVulkanH $HeadersDir -Force
+    Write-Host "Copied render_vulkan.h to install" -ForegroundColor Green
+}
+
 Write-Host "`n=== Done! ===" -ForegroundColor Green
 Write-Host "mpv-2.dll: $InstallDir/bin/mpv-2.dll"
 Write-Host "Import lib: $InstallDir/lib/mpv.lib"
 Write-Host "Dependencies: $DepsDir/"
+Write-Host "Backends: D3D11 + Vulkan"
 Get-ChildItem "$InstallDir/bin/mpv-2.dll" | Select-Object Name, Length, LastWriteTime

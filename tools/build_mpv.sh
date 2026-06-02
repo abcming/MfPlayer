@@ -23,21 +23,33 @@ fi
 echo "=== Checking key libraries ==="
 pkg-config --exists libavcodec 2>/dev/null || { echo "Need ffmpeg: pacman -S mingw-w64-ucrt-x86_64-ffmpeg"; exit 1; }
 pkg-config --exists libplacebo 2>/dev/null || { echo "Need libplacebo: pacman -S mingw-w64-ucrt-x86_64-libplacebo"; exit 1; }
+pkg-config --exists vulkan 2>/dev/null && VULKAN_AVAIL=1 || VULKAN_AVAIL=0
 
 echo "=== Configuring mpv ==="
 cd "$MPV_SRC"
 
-meson setup build \
-    --prefix="$OUTPUT_DIR" \
-    --buildtype=release \
-    -Dlibmpv=true \
-    -Ddefault_library=shared \
-    -Dd3d11=enabled \
-    -Dgpl=false \
-    -Dcplugins=disabled \
-    -Dtests=false \
-    -Dlibavdevice=enabled \
+MESON_ARGS=(
+    setup build
+    --prefix="$OUTPUT_DIR"
+    --buildtype=release
+    -Dlibmpv=true
+    -Ddefault_library=shared
+    -Dd3d11=enabled
+    -Dgpl=false
+    -Dcplugins=disabled
+    -Dtests=false
+    -Dlibavdevice=enabled
     -Dmanpage-build=disabled
+)
+
+if [ "$VULKAN_AVAIL" = "1" ]; then
+    echo "Vulkan found — enabling Vulkan render API backend"
+    MESON_ARGS+=(-Dvulkan=enabled)
+else
+    echo "Vulkan NOT found — skipping Vulkan backend (install: pacman -S mingw-w64-ucrt-x86_64-vulkan-loader)"
+fi
+
+meson "${MESON_ARGS[@]}"
 
 echo "=== Building libmpv ==="
 ninja -C build libmpv-2.dll
@@ -97,6 +109,7 @@ DEPS="
     libgcc_s_seh-1.dll
     libstdc++-6.dll
     libwinpthread-1.dll
+    vulkan-1.dll
 "
 
 echo "Copying DLL dependencies from $UCRT_BIN..."
@@ -115,13 +128,13 @@ for dll in $DEPS; do
 done
 echo "Copied $copied DLLs, $missing not found (may be OK if unused)"
 
-# Copy updated headers (including new render_d3d11.h)
-for h in client.h render.h render_gl.h render_d3d11.h stream_cb.h; do
+# Copy updated headers (including render_d3d11.h and render_vulkan.h)
+for h in client.h render.h render_gl.h render_d3d11.h render_vulkan.h stream_cb.h; do
     if [ -f "include/mpv/$h" ]; then
         cp -v "include/mpv/$h" "$OUTPUT_DIR/include/mpv/"
     fi
 done
 
 echo "=== Done ==="
-echo "libmpv with D3D11 render API installed to $OUTPUT_DIR"
+echo "libmpv with D3D11 (+ Vulkan if available) render API installed to $OUTPUT_DIR"
 echo "API version: $(grep MPV_CLIENT_API_VERSION include/mpv/client.h | head -1)"

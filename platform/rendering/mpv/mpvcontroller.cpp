@@ -8,6 +8,7 @@ extern "C" {
 #ifdef Q_OS_WIN
 #include <mpv/render_d3d11.h>
 #endif
+#include <mpv/render_vulkan.h>
 }
 
 #include <QOpenGLContext>
@@ -16,8 +17,9 @@ extern "C" {
 #ifndef Q_OS_WIN
 #include <qpa/qplatformnativeinterface.h>
 #endif
-#ifdef Q_OS_WIN
 #include <rhi/qrhi_platform.h>
+#if QT_CONFIG(vulkan)
+#include <QVulkanInstance>
 #endif
 #include <QDebug>
 #include <QMutex>
@@ -121,47 +123,92 @@ bool MpvController::ensureRenderCtx(QQuickWindow *window) {
     if (!m_mpv || !window)
         return false;
 
-#ifdef Q_OS_WIN
-    // D3D11 render API backend
     QRhi *rhi = window->rhi();
     if (!rhi) {
         qWarning() << "MpvController: no QRhi available on window";
         return false;
     }
-    auto *native = static_cast<const QRhiD3D11NativeHandles *>(rhi->nativeHandles());
-    if (!native || !native->dev) {
-        qWarning() << "MpvController: failed to get D3D11 device from QRhi";
+
+    // ── Vulkan (any platform) ──
+#if QT_CONFIG(vulkan)
+    if (rhi->backend() == QRhi::Vulkan) {
+        auto *nat = static_cast<const QRhiVulkanNativeHandles *>(rhi->nativeHandles());
+        if (!nat || !nat->physDev || !nat->dev || !nat->inst) {
+            qWarning() << "MpvController: failed to get Vulkan handles from QRhi";
+            return false;
+        }
+
+        qDebug() << "MpvController: creating Vulkan render context...";
+        mpv_vulkan_init_params vkp{};
+        vkp.instance = nat->inst->vkInstance();
+        vkp.get_proc_addr = reinterpret_cast<void *>(
+            nat->inst->getInstanceProcAddr("vkGetInstanceProcAddr"));
+        vkp.phys_device = nat->physDev;
+        vkp.device = nat->dev;
+        vkp.queue_family_index = nat->gfxQueueFamilyIdx;
+        vkp.queue_index = nat->gfxQueueIdx;
+
+        mpv_render_param params[5];
+        int i = 0;
+        params[i++] = {MPV_RENDER_PARAM_API_TYPE,
+                       const_cast<char *>(MPV_RENDER_API_TYPE_VULKAN)};
+        params[i++] = {MPV_RENDER_PARAM_VULKAN_INIT_PARAMS, &vkp};
+        params[i++] = {MPV_RENDER_PARAM_BACKEND,
+                       const_cast<char *>("gpu-next")};
+        params[i++] = {MPV_RENDER_PARAM_INVALID, nullptr};
+
+        int ret = mpv_render_context_create(&m_renderCtx, m_mpv, params);
+        if (ret >= 0) {
+            mpv_render_context_set_update_callback(m_renderCtx, [](void *ctx) {
+                auto *ctrl = static_cast<MpvController *>(ctx);
+                emit ctrl->renderUpdateNeeded();
+            }, this);
+            qDebug() << "MpvController: Vulkan render context OK";
+            return true;
+        }
+        qWarning() << "MpvController: Vulkan render context failed:" << ret;
         return false;
     }
+#endif // QT_CONFIG(vulkan)
 
-    qDebug() << "MpvController: creating D3D11 render context...";
-    mpv_d3d11_init_params d3d11p{};
-    d3d11p.device = native->dev;
+    // ── D3D11 (Windows) ──
+#ifdef Q_OS_WIN
+    if (rhi->backend() == QRhi::D3D11) {
+        auto *nat = static_cast<const QRhiD3D11NativeHandles *>(rhi->nativeHandles());
+        if (!nat || !nat->dev) {
+            qWarning() << "MpvController: failed to get D3D11 device from QRhi";
+            return false;
+        }
 
-    mpv_render_param params[5];
-    int i = 0;
-    params[i++] = {MPV_RENDER_PARAM_API_TYPE,
-                   const_cast<char *>(MPV_RENDER_API_TYPE_D3D11)};
-    params[i++] = {MPV_RENDER_PARAM_D3D11_INIT_PARAMS, &d3d11p};
-    params[i++] = {MPV_RENDER_PARAM_BACKEND,
-                   const_cast<char *>("gpu-next")};
-    params[i++] = {MPV_RENDER_PARAM_INVALID, nullptr};
+        qDebug() << "MpvController: creating D3D11 render context...";
+        mpv_d3d11_init_params d3d11p{};
+        d3d11p.device = nat->dev;
 
-    int ret = mpv_render_context_create(&m_renderCtx, m_mpv, params);
-    if (ret >= 0) {
-        mpv_render_context_set_update_callback(m_renderCtx, [](void *ctx) {
-            auto *ctrl = static_cast<MpvController *>(ctx);
-            emit ctrl->renderUpdateNeeded();
-        }, this);
-        qDebug() << "MpvController: D3D11 render context OK";
-        return true;
+        mpv_render_param params[5];
+        int i = 0;
+        params[i++] = {MPV_RENDER_PARAM_API_TYPE,
+                       const_cast<char *>(MPV_RENDER_API_TYPE_D3D11)};
+        params[i++] = {MPV_RENDER_PARAM_D3D11_INIT_PARAMS, &d3d11p};
+        params[i++] = {MPV_RENDER_PARAM_BACKEND,
+                       const_cast<char *>("gpu-next")};
+        params[i++] = {MPV_RENDER_PARAM_INVALID, nullptr};
+
+        int ret = mpv_render_context_create(&m_renderCtx, m_mpv, params);
+        if (ret >= 0) {
+            mpv_render_context_set_update_callback(m_renderCtx, [](void *ctx) {
+                auto *ctrl = static_cast<MpvController *>(ctx);
+                emit ctrl->renderUpdateNeeded();
+            }, this);
+            qDebug() << "MpvController: D3D11 render context OK";
+            return true;
+        }
+        qWarning() << "MpvController: D3D11 render context failed:" << ret;
+        return false;
     }
-    qWarning() << "MpvController: D3D11 render context failed:" << ret;
-    return false;
+#endif // Q_OS_WIN
 
-#else
-    // OpenGL render API backend
-    qDebug() << "MpvController: creating render context...";
+    // ── OpenGL (fallback) ──
+    qDebug() << "MpvController: creating OpenGL render context...";
     auto glAddr = [](void *ctx, const char *name) -> void * {
         Q_UNUSED(ctx);
         return reinterpret_cast<void *>(
@@ -196,12 +243,11 @@ bool MpvController::ensureRenderCtx(QQuickWindow *window) {
             auto *ctrl = static_cast<MpvController *>(ctx);
             emit ctrl->renderUpdateNeeded();
         }, this);
-        qDebug() << "MpvController: render context OK";
+        qDebug() << "MpvController: OpenGL render context OK";
         return true;
     }
-    qWarning() << "MpvController: render context failed:" << ret;
+    qWarning() << "MpvController: OpenGL render context failed:" << ret;
     return false;
-#endif
 }
 
 double MpvController::position() const { return m_position; }

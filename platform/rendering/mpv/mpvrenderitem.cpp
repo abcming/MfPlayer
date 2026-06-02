@@ -6,6 +6,7 @@ extern "C" {
 #ifdef Q_OS_WIN
 #include <mpv/render_d3d11.h>
 #endif
+#include <mpv/render_vulkan.h>
 }
 
 #include <QOpenGLContext>
@@ -15,10 +16,10 @@ extern "C" {
 #include <QMutexLocker>
 #ifdef Q_OS_WIN
 #include <d3d11.h>
-// NOTE: qrhi_platform.h is a Qt private header. QRhiD3D11NativeHandles has been
-// stable since Qt 6.2, but may change across major Qt versions. If upgrading
-// past Qt 6.x, verify this struct still exists.
+#endif
 #include <rhi/qrhi_platform.h>
+#if QT_CONFIG(vulkan)
+#include <vulkan/vulkan.h>
 #endif
 
 namespace {
@@ -99,54 +100,137 @@ void VideoRenderNode::render(const RenderState *state) {
     auto *win = st.item ? st.item->window() : nullptr;
     if (!win) return;
 
-#ifdef Q_OS_WIN
-    // D3D11 render API backend
-    win->beginExternalCommands();
-
     QRhi *rhi = win->rhi();
     if (!rhi) {
-        win->endExternalCommands();
-        return;
-    }
-    auto *native = static_cast<const QRhiD3D11NativeHandles *>(
-        rhi->nativeHandles());
-    if (!native || !native->context) {
-        win->endExternalCommands();
-        return;
-    }
-    ID3D11DeviceContext *ctx =
-        static_cast<ID3D11DeviceContext *>(native->context);
-
-    // Retrieve the current render target view from the output merger
-    ID3D11RenderTargetView *rtv = nullptr;
-    ctx->OMGetRenderTargets(1, &rtv, nullptr);
-    if (!rtv) {
-        win->endExternalCommands();
         return;
     }
 
-    ID3D11Resource *res = nullptr;
-    rtv->GetResource(&res);
-    ID3D11Texture2D *tex = static_cast<ID3D11Texture2D *>(res);
+#if QT_CONFIG(vulkan)
+    // ── Vulkan render API backend ──
+    if (rhi->backend() == QRhi::Vulkan) {
+        win->beginExternalCommands();
 
-    mpv_d3d11_fbo fbo{tex, st.nodeSize.width(), st.nodeSize.height()};
-    int advanced = 1;
-    int block = 0;
-    mpv_render_param params[] = {
-        {MPV_RENDER_PARAM_D3D11_FBO, &fbo},
-        {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
-        {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
-        {MPV_RENDER_PARAM_INVALID, nullptr}
-    };
-    mpv_render_context_render(st.renderCtx, params);
-    mpv_render_context_report_swap(st.renderCtx);
+        // Resolve the current render target to a VkImage.  Qt's Vulkan
+        // swapchain uses QRhiTextureRenderTarget with the color attachment
+        // wrapping a swapchain VkImage or a QRhiTexture backed by one.
+        QRhiTexture *colorTex = nullptr;
+        QSize rtSize = st.nodeSize;
 
-    rtv->Release();
-    res->Release();
+        QRhiRenderTarget *rt = win->renderTarget();
+        // Qt 6 swapchain render targets subclass QRhiTextureRenderTarget.
+        // Use resourceType() to be safe rather than relying on static_cast.
+        if (rt && rt->resourceType() == QRhiResource::TextureRenderTarget) {
+            auto *trt = static_cast<QRhiTextureRenderTarget *>(rt);
+            const auto desc = trt->description();
+            auto it = desc.cbeginColorAttachments();
+            if (it != desc.cendColorAttachments() && it->texture()) {
+                colorTex = it->texture();
+                rtSize = it->texture()->pixelSize();
+            }
+        }
 
-    win->endExternalCommands();
-#else
-    // OpenGL render API backend
+        if (!colorTex) {
+            qWarning() << "MpvController: Vulkan render target has no color attachment";
+            win->endExternalCommands();
+            return;
+        }
+
+        auto nt = colorTex->nativeTexture();
+        VkImage vkImg = reinterpret_cast<VkImage>(nt.object);
+        if (!vkImg || vkImg == VK_NULL_HANDLE) {
+            qWarning() << "MpvController: Vulkan color attachment has no native VkImage";
+            win->endExternalCommands();
+            return;
+        }
+
+        // Map QRhiTexture::Format → VkFormat for common swapchain formats.
+        auto toVkFormat = [](QRhiTexture::Format f) -> VkFormat {
+            switch (f) {
+            case QRhiTexture::RGBA8:      return VK_FORMAT_R8G8B8A8_UNORM;
+            case QRhiTexture::BGRA8:      return VK_FORMAT_B8G8R8A8_UNORM;
+            case QRhiTexture::RGBA8_SRGB: return VK_FORMAT_R8G8B8A8_SRGB;
+            case QRhiTexture::RGBA16F:    return VK_FORMAT_R16G16B16A16_SFLOAT;
+            case QRhiTexture::RGB10A2:    return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+            default:                      return VK_FORMAT_UNDEFINED;
+            }
+        };
+        VkFormat vkFmt = toVkFormat(colorTex->format());
+        if (vkFmt == VK_FORMAT_UNDEFINED) {
+            // Fallback: most SDR swapchains use BGRA8.
+            vkFmt = VK_FORMAT_B8G8R8A8_UNORM;
+        }
+
+        mpv_vulkan_fbo fbo{};
+        fbo.image  = vkImg;
+        fbo.w      = rtSize.width();
+        fbo.h      = rtSize.height();
+        fbo.format = static_cast<int>(vkFmt);
+        fbo.usage  = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+                   | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                   | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+        int advanced = 1;
+        int block = 0;
+        mpv_render_param params[] = {
+            {MPV_RENDER_PARAM_VULKAN_FBO, &fbo},
+            {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
+            {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
+            {MPV_RENDER_PARAM_INVALID, nullptr}
+        };
+        mpv_render_context_render(st.renderCtx, params);
+        mpv_render_context_report_swap(st.renderCtx);
+
+        win->endExternalCommands();
+        return;
+    }
+#endif // QT_CONFIG(vulkan)
+
+#ifdef Q_OS_WIN
+    // ── D3D11 render API backend ──
+    {
+        win->beginExternalCommands();
+
+        auto *nat = static_cast<const QRhiD3D11NativeHandles *>(rhi->nativeHandles());
+        if (!nat || !nat->context) {
+            win->endExternalCommands();
+            return;
+        }
+        ID3D11DeviceContext *ctx =
+            static_cast<ID3D11DeviceContext *>(nat->context);
+
+        // Retrieve the current render target view from the output merger
+        ID3D11RenderTargetView *rtv = nullptr;
+        ctx->OMGetRenderTargets(1, &rtv, nullptr);
+        if (!rtv) {
+            win->endExternalCommands();
+            return;
+        }
+
+        ID3D11Resource *res = nullptr;
+        rtv->GetResource(&res);
+        ID3D11Texture2D *tex = static_cast<ID3D11Texture2D *>(res);
+
+        mpv_d3d11_fbo fbo{tex, st.nodeSize.width(), st.nodeSize.height()};
+        int advanced = 1;
+        int block = 0;
+        mpv_render_param params[] = {
+            {MPV_RENDER_PARAM_D3D11_FBO, &fbo},
+            {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
+            {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
+            {MPV_RENDER_PARAM_INVALID, nullptr}
+        };
+        mpv_render_context_render(st.renderCtx, params);
+        mpv_render_context_report_swap(st.renderCtx);
+
+        rtv->Release();
+        res->Release();
+
+        win->endExternalCommands();
+        return;
+    }
+#endif // Q_OS_WIN
+
+    // ── OpenGL render API backend (fallback) ──
     win->beginExternalCommands();
 
     auto *glCtx = QOpenGLContext::currentContext();
@@ -181,7 +265,6 @@ void VideoRenderNode::render(const RenderState *state) {
     mpv_render_context_report_swap(st.renderCtx);
 
     win->endExternalCommands();
-#endif
 }
 
 void VideoRenderNode::releaseResources() {
