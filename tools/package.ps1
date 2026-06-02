@@ -176,3 +176,36 @@ Write-Host "Package: $ZipPath"
 Write-Host "Size:    $size"
 Write-Host ""
 Write-Host "Extract the zip and run MfPlayer.exe."
+
+# ── Compile installer (Inno Setup) ──
+Write-Host ""
+Write-Host "=== Compiling installer ===" -ForegroundColor Cyan
+
+# Inno Setup doesn't add itself to PATH by default — find it
+$Iscc = Get-Command iscc -ErrorAction SilentlyContinue
+if (-not $Iscc) {
+    $candidates = @(
+        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) { $Iscc = $c; break }
+    }
+}
+
+$IssFile = "$ScriptDir\installer.iss"
+if ($Iscc -and (Test-Path $IssFile)) {
+    & $Iscc $IssFile
+    $setup = Get-ChildItem "$ProjectDir\deploy\MfPlayer-*-setup.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($setup) {
+        Write-Host ""
+        Write-Host "=== All done ===" -ForegroundColor Green
+        Write-Host "Installer: $($setup.FullName)"
+        Write-Host "Size:      {0:N1} MB" -f ($setup.Length / 1MB)
+    }
+} elseif (-not (Test-Path $IssFile)) {
+    Write-Host "  Skipped: installer.iss not found" -ForegroundColor Yellow
+} else {
+    Write-Host "  Skipped: Inno Setup not found. Install: winget install InnoSetup" -ForegroundColor Yellow
+    Write-Host "  Then run: iscc .\tools\installer.iss" -ForegroundColor Yellow
+}
