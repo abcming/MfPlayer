@@ -85,6 +85,10 @@ if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
 # meson on Python 3.15 needs meson-info/ to exist before writing introspection
 New-Item -ItemType Directory -Path "$BuildDir/meson-info" -Force | Out-Null
 
+# Python 3.15 chokes on MSVC's non-UTF-8 output during compiler detection
+# in Developer PowerShell. Tell Python to replace undecodable bytes.
+$env:PYTHONIOENCODING = "utf-8:replace"
+
 $MesonArgs = @(
     "setup", $BuildDir,
     "--prefix=$InstallDir",
