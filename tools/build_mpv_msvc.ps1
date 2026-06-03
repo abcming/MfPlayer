@@ -82,6 +82,8 @@ if (-not (Test-Path $PlaceboPc)) {
 # Step 3: Configure meson
 Write-Host "`n=== Step 3: Configuring meson ===" -ForegroundColor Yellow
 if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
+# meson on Python 3.15 needs meson-info/ to exist before writing introspection
+New-Item -ItemType Directory -Path "$BuildDir/meson-info" -Force | Out-Null
 
 $MesonArgs = @(
     "setup", $BuildDir,
@@ -93,6 +95,7 @@ $MesonArgs = @(
     "-Dcplayer=false",
     "-Dd3d11=enabled",
     "-Dvulkan=enabled",
+    "-Dlibplacebo:vulkan=enabled",
     "-Dcplugins=disabled",
     "-Dtests=false",
     "-Djavascript=disabled",
