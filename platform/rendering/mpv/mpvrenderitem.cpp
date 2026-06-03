@@ -124,7 +124,14 @@ void VideoRenderNode::render(const RenderState *state) {
 
         if (sc) {
             QRhiRenderTarget *rt = sc->currentFrameRenderTarget();
-            if (rt && rt->resourceType() == QRhiResource::TextureRenderTarget) {
+            if (rt) {
+                qDebug() << "Vulkan swapchain RT type:" << rt->resourceType();
+            }
+            // Qt 6's Vulkan swapchain returns a QRhiSwapChainRenderTarget whose
+            // resourceType() is SwapChainRenderTarget (not TextureRenderTarget),
+            // but it still has color attachments. Accept either type.
+            if (rt && (rt->resourceType() == QRhiResource::TextureRenderTarget
+                    || rt->resourceType() == QRhiResource::SwapChainRenderTarget)) {
                 auto *trt = static_cast<QRhiTextureRenderTarget *>(rt);
                 const auto desc = trt->description();
                 auto it = desc.cbeginColorAttachments();
@@ -136,7 +143,8 @@ void VideoRenderNode::render(const RenderState *state) {
         }
 
         if (!colorTex) {
-            qWarning() << "MpvController: Vulkan render target has no color attachment";
+            qWarning() << "MpvController: Vulkan render target has no color attachment"
+                       << "(rt=" << (sc ? sc->currentFrameRenderTarget() : nullptr) << ")";
             win->endExternalCommands();
             return;
         }
