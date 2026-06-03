@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+pragma ValueTypeBehavior: Assertable
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -30,6 +32,7 @@ Column {
     Component {
         id: castDelegate
         Rectangle {
+            required property var modelData
             width: 120; height: 205
             radius: 6
             color: "transparent"

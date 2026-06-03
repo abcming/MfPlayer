@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+pragma ValueTypeBehavior: Assertable
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -55,6 +57,9 @@ HdrPqOverlay {
     // ── Delegate Components (defined at root level so they resolve before use) ──
     property Component libCardDelegate: Component {
         Rectangle {
+            required property string itemId
+            required property string itemName
+            required property string imageUrl
             width: 200; height: 135
             radius: 6
             color: "transparent"
@@ -68,11 +73,11 @@ HdrPqOverlay {
                     width: parent.width
                     height: 113
                     imgRadius: 6
-                    embyUrl: Server.emby ? Server.emby.imageUrl(model.imageUrl) : ""
+                    embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
                 }
 
                 Label {
-                    text: model.itemName || "?"
+                    text: itemName || "?"
                     color: Theme.textPrimary
                     font.pixelSize: 11
                     width: parent.width
@@ -88,7 +93,7 @@ HdrPqOverlay {
                     browseRoot.showSuggestions = false
                     libraryTabs.selectedIndex = 0
                     mediaGrid.contentY = 0
-                    Library.browseLibrary(model.itemId)
+                    Library.browseLibrary(itemId)
                 }
             }
         }
@@ -96,6 +101,19 @@ HdrPqOverlay {
 
     property Component resumeCardDelegate: Component {
         Rectangle {
+            required property string itemId
+            required property string imageUrl
+            required property string itemType
+            required property string backdropUrl
+            required property var runTimeTicks
+            required property var playbackPositionTicks
+            required property double playedPercentage
+            required property bool isFavorite
+            required property bool played
+            required property string seriesName
+            required property string itemName
+            required property int indexNumber
+            required property var year
             width: 240; height: 180
             radius: 6
             color: "transparent"
@@ -104,7 +122,7 @@ HdrPqOverlay {
 
             MouseArea {
                 anchors.fill: parent
-                onClicked: Nav.pushDetail(model.itemId)
+                onClicked: Nav.pushDetail(itemId)
             }
 
             ColumnLayout {
@@ -122,9 +140,9 @@ HdrPqOverlay {
                         externalHover: _resumeHover.hovered
                         embyUrl: {
                             if (!Server.emby) return ""
-                            if (model.itemType === Str.typeMovie && model.backdropUrl)
-                                return Server.emby.imageUrl(model.backdropUrl + "&maxWidth=600&quality=80")
-                            return Server.emby.imageUrl(model.imageUrl)
+                            if (itemType === Str.typeMovie && backdropUrl)
+                                return Server.emby.imageUrl(backdropUrl + "&maxWidth=600&quality=80")
+                            return Server.emby.imageUrl(imageUrl)
                         }
                     }
 
@@ -139,7 +157,7 @@ HdrPqOverlay {
                         Label {
                             id: remTimeLabel
                             anchors.centerIn: parent
-                            text: Str.remainingTimeCompact(model.runTimeTicks, model.playbackPositionTicks)
+                            text: Str.remainingTimeCompact(runTimeTicks, playbackPositionTicks)
                             color: Theme.textPrimary
                             font.pixelSize: 10
                         }
@@ -150,11 +168,11 @@ HdrPqOverlay {
                         height: 4
                         radius: 2
                         color: Theme.panelDeep
-                        visible: (model.playedPercentage || 0) > 0
+                        visible: (playedPercentage || 0) > 0
 
                         Rectangle {
                             anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                            width: parent.width * Math.min((model.playedPercentage || 0) / 100, 1)
+                            width: parent.width * Math.min((playedPercentage || 0) / 100, 1)
                             radius: 2
                             color: Theme.primary
                         }
@@ -172,8 +190,8 @@ HdrPqOverlay {
                             color: _resumeFavMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
                             Icon {
                                 anchors.centerIn: parent
-                                name: model.isFavorite ? "heart_filled" : "heart"
-                                color: model.isFavorite ? Theme.primary : Theme.textPrimary
+                                name: isFavorite ? "heart_filled" : "heart"
+                                color: isFavorite ? Theme.primary : Theme.textPrimary
                                 size: 16
                             }
                             MouseArea {
@@ -181,8 +199,8 @@ HdrPqOverlay {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: {
-                                    if (model.isFavorite) Detail.removeFavorite(model.itemId)
-                                    else Detail.addFavorite(model.itemId)
+                                    if (isFavorite) Detail.removeFavorite(itemId)
+                                    else Detail.addFavorite(itemId)
                                 }
                             }
                         }
@@ -193,7 +211,7 @@ HdrPqOverlay {
                             Icon {
                                 anchors.centerIn: parent
                                 name: "check"
-                                color: model.played ? Theme.primary : Theme.textPrimary
+                                color: played ? Theme.primary : Theme.textPrimary
                                 size: 16
                             }
                             MouseArea {
@@ -201,8 +219,8 @@ HdrPqOverlay {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: {
-                                    if (model.played) Detail.markUnplayed(model.itemId)
-                                    else Detail.markPlayed(model.itemId)
+                                    if (played) Detail.markUnplayed(itemId)
+                                    else Detail.markPlayed(itemId)
                                 }
                             }
                         }
@@ -211,7 +229,7 @@ HdrPqOverlay {
                 }
 
                 Label {
-                    text: model.seriesName || model.itemName || "?"
+                    text: seriesName || itemName || "?"
                     color: Theme.textPrimary
                     font.pixelSize: 12
                     Layout.fillWidth: true
@@ -221,10 +239,10 @@ HdrPqOverlay {
 
                 Label {
                     text: {
-                        let t = model.itemType || ""
+                        let t = itemType || ""
                         if (t === Str.typeEpisode)
-                            return Str.episodeShortLabel(model.indexNumber)
-                        return model.year || ""
+                            return Str.episodeShortLabel(indexNumber)
+                        return year || ""
                     }
                     color: Theme.textMuted
                     font.pixelSize: 11
@@ -236,6 +254,12 @@ HdrPqOverlay {
 
     property Component latestCardDelegate: Component {
         Rectangle {
+            required property string itemId
+            required property string imageUrl
+            required property bool isFavorite
+            required property bool played
+            required property string itemName
+            required property string year
             width: 150; height: 270
             radius: 6
             color: "transparent"
@@ -245,7 +269,7 @@ HdrPqOverlay {
             // Card-level navigation (fills entire card)
             MouseArea {
                 anchors.fill: parent
-                onClicked: Nav.pushDetail(model.itemId)
+                onClicked: Nav.pushDetail(itemId)
             }
 
             ColumnLayout {
@@ -261,7 +285,7 @@ HdrPqOverlay {
                         anchors.fill: parent
                         imgRadius: 6
                         externalHover: _latestHover.hovered
-                        embyUrl: Server.emby ? Server.emby.imageUrl(model.imageUrl) : ""
+                        embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
                     }
 
                     // Action buttons (top-right corner)
@@ -276,8 +300,8 @@ HdrPqOverlay {
                             color: _latestFavMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
                             Icon {
                                 anchors.centerIn: parent
-                                name: model.isFavorite ? "heart_filled" : "heart"
-                                color: model.isFavorite ? Theme.primary : Theme.textPrimary
+                                name: isFavorite ? "heart_filled" : "heart"
+                                color: isFavorite ? Theme.primary : Theme.textPrimary
                                 size: 16
                             }
                             MouseArea {
@@ -285,8 +309,8 @@ HdrPqOverlay {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: {
-                                    if (model.isFavorite) Detail.removeFavorite(model.itemId)
-                                    else Detail.addFavorite(model.itemId)
+                                    if (isFavorite) Detail.removeFavorite(itemId)
+                                    else Detail.addFavorite(itemId)
                                 }
                             }
                         }
@@ -297,7 +321,7 @@ HdrPqOverlay {
                             Icon {
                                 anchors.centerIn: parent
                                 name: "check"
-                                color: model.played ? Theme.primary : Theme.textPrimary
+                                color: played ? Theme.primary : Theme.textPrimary
                                 size: 16
                             }
                             MouseArea {
@@ -305,8 +329,8 @@ HdrPqOverlay {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: {
-                                    if (model.played) Detail.markUnplayed(model.itemId)
-                                    else Detail.markPlayed(model.itemId)
+                                    if (played) Detail.markUnplayed(itemId)
+                                    else Detail.markPlayed(itemId)
                                 }
                             }
                         }
@@ -315,7 +339,7 @@ HdrPqOverlay {
                 }
 
                 Label {
-                    text: model.itemName || "?"
+                    text: itemName || "?"
                     color: Theme.textPrimary
                     font.pixelSize: 12
                     Layout.fillWidth: true
@@ -325,7 +349,7 @@ HdrPqOverlay {
                 }
 
                 Label {
-                    text: model.year || ""
+                    text: year || ""
                     color: Theme.textMuted
                     font.pixelSize: 11
                     visible: text !== ""
@@ -336,6 +360,10 @@ HdrPqOverlay {
 
     property Component personCardDelegate: Component {
         Rectangle {
+            required property string itemId
+            required property string imageUrl
+            required property bool isFavorite
+            required property string itemName
             width: 120; height: 205
             radius: 6
             color: "transparent"
@@ -344,7 +372,7 @@ HdrPqOverlay {
 
             MouseArea {
                 anchors.fill: parent
-                onClicked: Nav.pushDetail(model.itemId)
+                onClicked: Nav.pushDetail(itemId)
             }
 
             Column {
@@ -360,7 +388,7 @@ HdrPqOverlay {
                         anchors.fill: parent
                         imgRadius: 6
                         externalHover: _personHover.hovered
-                        embyUrl: Server.emby ? Server.emby.imageUrl(model.imageUrl) : ""
+                        embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
                     }
 
                     // Favorite button (top-right corner)
@@ -372,8 +400,8 @@ HdrPqOverlay {
                         z: 10
                         Icon {
                             anchors.centerIn: parent
-                            name: model.isFavorite ? "heart_filled" : "heart"
-                            color: model.isFavorite ? Theme.primary : Theme.textPrimary
+                            name: isFavorite ? "heart_filled" : "heart"
+                            color: isFavorite ? Theme.primary : Theme.textPrimary
                             size: 16
                         }
                         MouseArea {
@@ -381,15 +409,15 @@ HdrPqOverlay {
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: {
-                                if (model.isFavorite) Detail.removeFavorite(model.itemId)
-                                else Detail.addFavorite(model.itemId)
+                                if (isFavorite) Detail.removeFavorite(itemId)
+                                else Detail.addFavorite(itemId)
                             }
                         }
                     }
                 }
 
                 Label {
-                    text: model.itemName || "?"
+                    text: itemName || "?"
                     color: Theme.textPrimary
                     font.pixelSize: 11
                     width: parent.width
@@ -564,8 +592,10 @@ HdrPqOverlay {
                     }
 
                     delegate: ItemDelegate {
+                        required property string itemId
+                        required property string itemName
                         width: libraryList.width
-                        text: model.itemName || "?"
+                        text: itemName || "?"
                         hoverEnabled: true
 
                         contentItem: Text {
@@ -575,7 +605,7 @@ HdrPqOverlay {
                         }
 
                         background: Rectangle {
-                            color: parent.hovered || (Library.currentLibraryId === model.itemId)
+                            color: parent.hovered || (Library.currentLibraryId === itemId)
                                    ? Theme.active : "transparent"
                             radius: 4
                         }
@@ -585,7 +615,7 @@ HdrPqOverlay {
                             browseRoot.showSuggestions = false
                             libraryTabs.selectedIndex = 0
                             mediaGrid.contentY = 0
-                            Library.browseLibrary(model.itemId)
+                            Library.browseLibrary(itemId)
                         }
                     }
                 }
@@ -1065,6 +1095,8 @@ HdrPqOverlay {
                     Repeater {
                         model: libraryTabs.currentTabs
                         delegate: Rectangle {
+                            required property int index
+                            required property var modelData
                             width: tabLabel.implicitWidth + 20
                             height: 30
                             radius: 15

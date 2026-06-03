@@ -75,6 +75,8 @@ MpvController::MpvController(QObject *parent)
     mpv_set_option_string(m_mpv, "user-agent", MFPLAYER_USER_AGENT);
 
     // Route mpv log messages to Qt debug output (visible in DebugView / Qt Creator)
+    // Suppress hevc decoder noise (e.g. "Multiple Dolby Vision RPUs in one AU")
+    mpv_set_option_string(m_mpv, "msg-level", "ffmpeg/hevc=error");
     mpv_request_log_messages(m_mpv, "warn");
 
     if (mpv_initialize(m_mpv) < 0) {
@@ -230,11 +232,13 @@ bool MpvController::ensureRenderCtx(QQuickWindow *window) {
     };
     mpv_opengl_init_params glp{glAddr, nullptr};
 
-    mpv_render_param params[5];
+    mpv_render_param params[6];
     int i = 0;
     params[i++] = {MPV_RENDER_PARAM_API_TYPE,
                    const_cast<char *>(MPV_RENDER_API_TYPE_OPENGL)};
     params[i++] = {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &glp};
+    params[i++] = {MPV_RENDER_PARAM_BACKEND,
+                   const_cast<char *>("gpu-next")};
 
     // Pass X11/Wayland display for hardware decoding interop and color management.
 #ifndef Q_OS_WIN
@@ -311,6 +315,22 @@ void MpvController::setTargetPeak(int nits) {
     QByteArray val = QByteArray::number(nits);
     const char *data = val.constData();
     mpv_set_property_async(m_mpv, 0, "target-peak", MPV_FORMAT_STRING, &data);
+}
+
+void MpvController::updateHdrDisplayActive(bool active) {
+    if (!m_mpv) return;
+
+    if (active) {
+        // HDR display: output PQ into BT.2020 container
+        mpv_set_option_string(m_mpv, "target-trc", "pq");
+        mpv_set_option_string(m_mpv, "target-prim", "bt.2020");
+    } else {
+        // SDR display: output sRGB into BT.709 — matches the 8-bit SDR swapchain
+        mpv_set_option_string(m_mpv, "target-trc", "srgb");
+        mpv_set_option_string(m_mpv, "target-prim", "bt.709");
+    }
+    // target-peak is managed separately via setTargetPeak / settings store.
+    // When SDR, the srgb transfer function makes peak irrelevant.
 }
 
 void MpvController::pause() {

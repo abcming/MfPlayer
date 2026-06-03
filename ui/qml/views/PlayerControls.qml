@@ -27,6 +27,7 @@ Rectangle {
         // Seek directly on every value change for frame-level scrubbing.
         Slider {
             id: progressSlider
+            focusPolicy: Qt.NoFocus
             Layout.fillWidth: true
             from: 0
             to: Playback.duration || 1
@@ -179,6 +180,7 @@ Rectangle {
             // Prev episode
             Button {
                 visible: playlistData.length > 1 && episodeIndex > 0
+                focusPolicy: Qt.NoFocus
                 flat: true
                 implicitWidth: 36; implicitHeight: 36
                 onClicked: prevClicked()
@@ -196,6 +198,7 @@ Rectangle {
             }
 
             Button {
+                focusPolicy: Qt.NoFocus
                 flat: true
                 implicitWidth: 36; implicitHeight: 36
                 onClicked: Playback.playing ? Playback.pause() : Playback.resume()
@@ -217,6 +220,7 @@ Rectangle {
                 visible: playlistData.length > 1
                          && episodeIndex >= 0
                          && episodeIndex < playlistData.length - 1
+                focusPolicy: Qt.NoFocus
                 flat: true
                 implicitWidth: 36; implicitHeight: 36
                 onClicked: nextClicked()
@@ -241,6 +245,7 @@ Rectangle {
                 // Speed selector
                 Button {
                     id: speedBtn
+                    focusPolicy: Qt.NoFocus
                     flat: true
                     implicitWidth: 44; implicitHeight: 36
 
@@ -337,6 +342,7 @@ Rectangle {
 
                 Slider {
                     id: volumeSlider
+                    focusPolicy: Qt.NoFocus
                     Layout.preferredWidth: 80
                     from: 0
                     to: 100
@@ -373,6 +379,7 @@ Rectangle {
 
                 // Fullscreen toggle
                 Button {
+                    focusPolicy: Qt.NoFocus
                     flat: true
                     implicitWidth: 36; implicitHeight: 36
                     onClicked: Playback.toggleFullscreen()

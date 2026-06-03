@@ -9,6 +9,7 @@
 #include <thread>
 #include <vector>
 #include <mutex>
+#include <atomic>
 
 class CurlEngine;
 
@@ -79,4 +80,5 @@ private:
     std::thread m_clearThread;
     std::vector<std::thread> m_workerThreads;  // image validation+write threads
     std::mutex m_workerMutex;                  // protects m_workerThreads
+    std::atomic<bool> m_stopFlag{false};       // set in dtor; check in future worker loops
 };

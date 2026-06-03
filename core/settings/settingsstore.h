@@ -4,32 +4,33 @@
 
 class SettingsStore : public QObject {
     Q_OBJECT
-    Q_PROPERTY(QString embyServer READ embyServer WRITE setEmbyServer NOTIFY embyServerChanged)
-    Q_PROPERTY(QString embyUsername READ embyUsername WRITE setEmbyUsername NOTIFY embyUsernameChanged)
-    Q_PROPERTY(QString embyToken READ embyToken WRITE setEmbyToken NOTIFY embyTokenChanged)
-    Q_PROPERTY(QString embyUserId READ embyUserId WRITE setEmbyUserId NOTIFY embyUserIdChanged)
-    Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged)
-    Q_PROPERTY(int hdrPeakBrightness READ hdrPeakBrightness WRITE setHdrPeakBrightness NOTIFY hdrPeakBrightnessChanged)
-    Q_PROPERTY(int windowWidth READ windowWidth WRITE setWindowWidth NOTIFY windowSizeChanged)
-    Q_PROPERTY(int windowHeight READ windowHeight WRITE setWindowHeight NOTIFY windowSizeChanged)
-    Q_PROPERTY(int sortBy READ sortBy WRITE setSortBy NOTIFY sortByChanged)
-    Q_PROPERTY(bool sortAscending READ sortAscending WRITE setSortAscending NOTIFY sortAscendingChanged)
-    Q_PROPERTY(QString audioLanguage READ audioLanguage WRITE setAudioLanguage NOTIFY audioLanguageChanged)
-    Q_PROPERTY(QString subtitleLanguage READ subtitleLanguage WRITE setSubtitleLanguage NOTIFY subtitleLanguageChanged)
-    Q_PROPERTY(int actionAfterEnd READ actionAfterEnd WRITE setActionAfterEnd NOTIFY actionAfterEndChanged)
-    Q_PROPERTY(int seekForwardStep READ seekForwardStep WRITE setSeekForwardStep NOTIFY seekForwardStepChanged)
-    Q_PROPERTY(int seekBackwardStep READ seekBackwardStep WRITE setSeekBackwardStep NOTIFY seekBackwardStepChanged)
-    Q_PROPERTY(int keySeekBackward READ keySeekBackward WRITE setKeySeekBackward NOTIFY keyBindingsChanged)
-    Q_PROPERTY(int keySeekForward READ keySeekForward WRITE setKeySeekForward NOTIFY keyBindingsChanged)
-    Q_PROPERTY(int keyPlayPause READ keyPlayPause WRITE setKeyPlayPause NOTIFY keyBindingsChanged)
-    Q_PROPERTY(int keyFullscreen READ keyFullscreen WRITE setKeyFullscreen NOTIFY keyBindingsChanged)
-    Q_PROPERTY(int keyStats READ keyStats WRITE setKeyStats NOTIFY keyBindingsChanged)
-    Q_PROPERTY(int keySpeedDown READ keySpeedDown WRITE setKeySpeedDown NOTIFY keyBindingsChanged)
-    Q_PROPERTY(int keySpeedUp READ keySpeedUp WRITE setKeySpeedUp NOTIFY keyBindingsChanged)
-    Q_PROPERTY(int keyVolumeUp READ keyVolumeUp WRITE setKeyVolumeUp NOTIFY keyBindingsChanged)
-    Q_PROPERTY(int keyVolumeDown READ keyVolumeDown WRITE setKeyVolumeDown NOTIFY keyBindingsChanged)
-    Q_PROPERTY(bool skipSslVerify READ skipSslVerify WRITE setSkipSslVerify NOTIFY skipSslVerifyChanged)
-    Q_PROPERTY(int graphicsApi READ graphicsApi WRITE setGraphicsApi NOTIFY graphicsApiChanged)
+    Q_PROPERTY(QString embyServer READ embyServer WRITE setEmbyServer NOTIFY embyServerChanged FINAL)
+    Q_PROPERTY(QString embyUsername READ embyUsername WRITE setEmbyUsername NOTIFY embyUsernameChanged FINAL)
+    Q_PROPERTY(QString embyToken READ embyToken WRITE setEmbyToken NOTIFY embyTokenChanged FINAL)
+    Q_PROPERTY(QString embyUserId READ embyUserId WRITE setEmbyUserId NOTIFY embyUserIdChanged FINAL)
+    Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged FINAL)
+    Q_PROPERTY(int hdrPeakBrightness READ hdrPeakBrightness WRITE setHdrPeakBrightness NOTIFY hdrPeakBrightnessChanged FINAL)
+    Q_PROPERTY(int sdrWhiteNits READ sdrWhiteNits WRITE setSdrWhiteNits NOTIFY sdrWhiteNitsChanged FINAL)
+    Q_PROPERTY(int windowWidth READ windowWidth WRITE setWindowWidth NOTIFY windowSizeChanged FINAL)
+    Q_PROPERTY(int windowHeight READ windowHeight WRITE setWindowHeight NOTIFY windowSizeChanged FINAL)
+    Q_PROPERTY(int sortBy READ sortBy WRITE setSortBy NOTIFY sortByChanged FINAL)
+    Q_PROPERTY(bool sortAscending READ sortAscending WRITE setSortAscending NOTIFY sortAscendingChanged FINAL)
+    Q_PROPERTY(QString audioLanguage READ audioLanguage WRITE setAudioLanguage NOTIFY audioLanguageChanged FINAL)
+    Q_PROPERTY(QString subtitleLanguage READ subtitleLanguage WRITE setSubtitleLanguage NOTIFY subtitleLanguageChanged FINAL)
+    Q_PROPERTY(int actionAfterEnd READ actionAfterEnd WRITE setActionAfterEnd NOTIFY actionAfterEndChanged FINAL)
+    Q_PROPERTY(int seekForwardStep READ seekForwardStep WRITE setSeekForwardStep NOTIFY seekForwardStepChanged FINAL)
+    Q_PROPERTY(int seekBackwardStep READ seekBackwardStep WRITE setSeekBackwardStep NOTIFY seekBackwardStepChanged FINAL)
+    Q_PROPERTY(int keySeekBackward READ keySeekBackward WRITE setKeySeekBackward NOTIFY keyBindingsChanged FINAL)
+    Q_PROPERTY(int keySeekForward READ keySeekForward WRITE setKeySeekForward NOTIFY keyBindingsChanged FINAL)
+    Q_PROPERTY(int keyPlayPause READ keyPlayPause WRITE setKeyPlayPause NOTIFY keyBindingsChanged FINAL)
+    Q_PROPERTY(int keyFullscreen READ keyFullscreen WRITE setKeyFullscreen NOTIFY keyBindingsChanged FINAL)
+    Q_PROPERTY(int keyStats READ keyStats WRITE setKeyStats NOTIFY keyBindingsChanged FINAL)
+    Q_PROPERTY(int keySpeedDown READ keySpeedDown WRITE setKeySpeedDown NOTIFY keyBindingsChanged FINAL)
+    Q_PROPERTY(int keySpeedUp READ keySpeedUp WRITE setKeySpeedUp NOTIFY keyBindingsChanged FINAL)
+    Q_PROPERTY(int keyVolumeUp READ keyVolumeUp WRITE setKeyVolumeUp NOTIFY keyBindingsChanged FINAL)
+    Q_PROPERTY(int keyVolumeDown READ keyVolumeDown WRITE setKeyVolumeDown NOTIFY keyBindingsChanged FINAL)
+    Q_PROPERTY(bool skipSslVerify READ skipSslVerify WRITE setSkipSslVerify NOTIFY skipSslVerifyChanged FINAL)
+    Q_PROPERTY(int graphicsApi READ graphicsApi WRITE setGraphicsApi NOTIFY graphicsApiChanged FINAL)
 
 public:
     explicit SettingsStore(QObject *parent = nullptr);
@@ -51,6 +52,9 @@ public:
 
     int hdrPeakBrightness() const;
     void setHdrPeakBrightness(int nits);
+
+    int sdrWhiteNits() const;
+    void setSdrWhiteNits(int nits);
 
     int windowWidth() const;
     void setWindowWidth(int w);
@@ -109,6 +113,7 @@ signals:
     void embyUserIdChanged();
     void volumeChanged();
     void hdrPeakBrightnessChanged();
+    void sdrWhiteNitsChanged();
     void windowSizeChanged();
     void sortByChanged();
     void sortAscendingChanged();

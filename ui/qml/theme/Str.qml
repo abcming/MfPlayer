@@ -142,6 +142,7 @@ QtObject {
     readonly property string keyVolumeUp: "音量+"
     readonly property string keyVolumeDown: "音量-"
     readonly property string settingsHdrBrightness: "HDR 峰值亮度"
+    readonly property string settingsSdrWhiteNits: "SDR 界面亮度"
     readonly property string settingsAbout: "关于"
 
     // ── 文件对话框 ──

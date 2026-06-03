@@ -31,7 +31,7 @@ private:
 
 class MpvRenderItem : public QQuickItem {
     Q_OBJECT
-    Q_PROPERTY(MpvController *player READ player WRITE setPlayer NOTIFY playerChanged)
+    Q_PROPERTY(MpvController *player READ player WRITE setPlayer NOTIFY playerChanged FINAL)
 
 public:
     explicit MpvRenderItem(QQuickItem *parent = nullptr);

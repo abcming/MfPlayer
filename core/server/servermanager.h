@@ -9,8 +9,8 @@
 
 class ServerManager : public QObject {
     Q_OBJECT
-    Q_PROPERTY(bool embyConnected READ embyConnected NOTIFY embyConnectedChanged)
-    Q_PROPERTY(QJsonArray serverList READ serverList NOTIFY serverListChanged)
+    Q_PROPERTY(bool embyConnected READ embyConnected NOTIFY embyConnectedChanged FINAL)
+    Q_PROPERTY(QJsonArray serverList READ serverList NOTIFY serverListChanged FINAL)
     Q_PROPERTY(SettingsStore* settings READ settings CONSTANT)
     Q_PROPERTY(EmbyClient* emby READ emby CONSTANT)
     Q_PROPERTY(CacheStore* cache READ cache CONSTANT)

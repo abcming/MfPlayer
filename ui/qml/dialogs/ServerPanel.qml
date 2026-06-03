@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+pragma ValueTypeBehavior: Assertable
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -42,6 +44,7 @@ StyledPopup {
             interactive: count > 4
 
             delegate: Rectangle {
+                required property var modelData
                 width: serverListView.width
                 height: 52
                 radius: 6

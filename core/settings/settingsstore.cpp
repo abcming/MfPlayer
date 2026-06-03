@@ -67,6 +67,16 @@ void SettingsStore::setHdrPeakBrightness(int nits) {
     }
 }
 
+int SettingsStore::sdrWhiteNits() const {
+    return m_settings.value("player/sdrWhiteNits", 203).toInt();
+}
+void SettingsStore::setSdrWhiteNits(int nits) {
+    if (nits != sdrWhiteNits()) {
+        m_settings.setValue("player/sdrWhiteNits", nits);
+        emit sdrWhiteNitsChanged();
+    }
+}
+
 int SettingsStore::windowWidth() const {
     return m_settings.value("ui/width", 0).toInt();
 }

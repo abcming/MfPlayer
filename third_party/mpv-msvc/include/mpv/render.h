@@ -51,6 +51,7 @@ extern "C" {
  *
  * Direct3D 11: via MPV_RENDER_API_TYPE_D3D11, see render_d3d11.h header.
  * OpenGL: via MPV_RENDER_API_TYPE_OPENGL, see render_gl.h header.
+ * Vulkan: via MPV_RENDER_API_TYPE_VULKAN, see render_vulkan.h header.
  * Software: via MPV_RENDER_API_TYPE_SW, see section "Software renderer"
  *
  * Threading
@@ -442,6 +443,17 @@ typedef enum mpv_render_param_type {
      *   "gpu-next"
      */
     MPV_RENDER_PARAM_BACKEND = 23,
+    /**
+     * Required parameters for initializing the Vulkan renderer. Valid for
+     * mpv_render_context_create().
+     * Type: mpv_vulkan_init_params*
+     */
+    MPV_RENDER_PARAM_VULKAN_INIT_PARAMS = 24,
+    /**
+     * Describes a Vulkan render target. Valid for mpv_render_context_render().
+     * Type: mpv_vulkan_fbo*
+     */
+    MPV_RENDER_PARAM_VULKAN_FBO = 25,
 } mpv_render_param_type;
 
 /**
@@ -488,6 +500,8 @@ typedef struct mpv_render_param {
 #define MPV_RENDER_API_TYPE_D3D11 "d3d11"
 // See render_gl.h
 #define MPV_RENDER_API_TYPE_OPENGL "opengl"
+// See render_vulkan.h
+#define MPV_RENDER_API_TYPE_VULKAN "vulkan"
 // See section "Software renderer"
 #define MPV_RENDER_API_TYPE_SW "sw"
 

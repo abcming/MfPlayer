@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+pragma ValueTypeBehavior: Assertable
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -156,6 +158,8 @@ Item {
 
             delegate: ItemDelegate {
                 id: trackItem
+                required property var modelData
+                required property int index
                 width: trackPopup.width - 12
                 hoverEnabled: true
 
@@ -168,18 +172,18 @@ Item {
                     ColumnLayout {
                         spacing: 2
                         Label {
-                            text: modelData.Name || (Str.trackVersionPrefix + (index + 1))
+                            text: trackItem.modelData.Name || (Str.trackVersionPrefix + (trackItem.index + 1))
                             color: trackItem.hovered ? Theme.primary : Theme.textSecondary
                             font.pixelSize: 13
                         }
                         Label {
                             text: {
                                 var parts = []
-                                var ms = modelData.MediaStreams || []
+                                var ms = trackItem.modelData.MediaStreams || []
                                 for (var j = 0; j < ms.length; j++)
                                     if (ms[j].Type === "Video")
                                         parts.push(ms[j].DisplayTitle || ms[j].Codec || "")
-                                parts.push(modelData.Container || "")
+                                parts.push(trackItem.modelData.Container || "")
                                 return parts.join(" · ")
                             }
                             color: Theme.textMuted; font.pixelSize: 10
@@ -193,7 +197,7 @@ Item {
                     RowLayout {
                         spacing: 8
                         Label {
-                            text: modelData.DisplayTitle || modelData.Language || ("Track " + index)
+                            text: trackItem.modelData.DisplayTitle || trackItem.modelData.Language || ("Track " + trackItem.index)
                             color: trackItem.hovered ? Theme.primary : Theme.textSecondary
                             font.pixelSize: 13
                             Layout.fillWidth: true
@@ -203,7 +207,7 @@ Item {
                             name: "check"
                             color: Theme.primary
                             size: 14
-                            visible: root.isSelected(modelData)
+                            visible: root.isSelected(trackItem.modelData)
                         }
                     }
                 }

@@ -196,6 +196,7 @@ Item {
             // Back button
             Button {
                 id: backBtn
+                focusPolicy: Qt.NoFocus
                 width: 36; height: 36
                 flat: true
                 onClicked: { Playback.stop(); Nav.pop() }
@@ -239,6 +240,7 @@ Item {
             // Video version button
             Button {
                 id: videoVerBtn
+                focusPolicy: Qt.NoFocus
                 visible: {
                     let srcs = (itemData ? itemData.MediaSources : []) || []
                     return srcs.length > 1
@@ -321,6 +323,7 @@ Item {
 
             // Subtitle track button
             Button {
+                focusPolicy: Qt.NoFocus
                 id: subtitleBtn
                 visible: subtitleModel.length > 1
                 flat: true
@@ -395,6 +398,7 @@ Item {
 
             // Audio track button
             Button {
+                focusPolicy: Qt.NoFocus
                 id: audioBtn
                 visible: audioModel.length > 1
                 flat: true
@@ -469,6 +473,7 @@ Item {
 
             // Chapter button
             Button {
+                focusPolicy: Qt.NoFocus
                 id: chapterBtn
                 visible: (Playback.mpv.chapters || []).length > 1
                 flat: true
@@ -554,6 +559,7 @@ Item {
             // Playlist toggle button
             Button {
                 id: playlistBtn
+                focusPolicy: Qt.NoFocus
                 visible: playlistData.length > 1
                 flat: true
                 width: 36; height: 36

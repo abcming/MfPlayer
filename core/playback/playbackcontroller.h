@@ -12,11 +12,11 @@
 
 class PlaybackController : public QObject {
     Q_OBJECT
-    Q_PROPERTY(double position READ position NOTIFY positionChanged)
-    Q_PROPERTY(double duration READ duration NOTIFY durationChanged)
-    Q_PROPERTY(bool playing READ playing NOTIFY playingChanged)
-    Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged)
-    Q_PROPERTY(bool fullscreen READ fullscreen NOTIFY fullscreenChanged)
+    Q_PROPERTY(double position READ position NOTIFY positionChanged FINAL)
+    Q_PROPERTY(double duration READ duration NOTIFY durationChanged FINAL)
+    Q_PROPERTY(bool playing READ playing NOTIFY playingChanged FINAL)
+    Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged FINAL)
+    Q_PROPERTY(bool fullscreen READ fullscreen NOTIFY fullscreenChanged FINAL)
     Q_PROPERTY(MpvController* mpv READ mpv CONSTANT)
 
 public:

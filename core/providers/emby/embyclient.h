@@ -31,10 +31,10 @@ struct FetchParams {
 
 class EmbyClient : public QObject {
     Q_OBJECT
-    Q_PROPERTY(bool authenticated READ authenticated NOTIFY authenticatedChanged)
-    Q_PROPERTY(QString serverUrl READ serverUrl NOTIFY serverUrlChanged)
-    Q_PROPERTY(QString accessToken READ accessToken NOTIFY accessTokenChanged)
-    Q_PROPERTY(QString userId READ userId NOTIFY userIdChanged)
+    Q_PROPERTY(bool authenticated READ authenticated NOTIFY authenticatedChanged FINAL)
+    Q_PROPERTY(QString serverUrl READ serverUrl NOTIFY serverUrlChanged FINAL)
+    Q_PROPERTY(QString accessToken READ accessToken NOTIFY accessTokenChanged FINAL)
+    Q_PROPERTY(QString userId READ userId NOTIFY userIdChanged FINAL)
 
 public:
     explicit EmbyClient(QObject *parent = nullptr);

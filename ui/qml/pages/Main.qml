@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+pragma ValueTypeBehavior: Assertable
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -106,6 +108,23 @@ ApplicationWindow {
         }
     }
 
+    // ── HDR startup cover ───────────────────────────────────────────
+    // During the first ~300ms after launch, _hdrActive is undefined but the
+    // HDR10 swapchain (R10G10B10A2, Rec.2020 PQ) is already active.  Without
+    // this cover, the sRGB QML UI renders as raw PQ electrical values and
+    // appears severely overexposed (white-hot) until HdrPqOverlay's shader
+    // activates.  This black overlay hides the window until the HDR state is
+    // known.  On SDR systems _hdrActive becomes false and the cover lifts
+    // immediately; on HDR it becomes true and the PQ-corrected UI is revealed.
+    Rectangle {
+        id: hdrStartupCover
+        anchors.fill: parent
+        color: "black"
+        z: 9999
+        opacity: (typeof _hdrActive !== "undefined") ? 0 : 1
+        Behavior on opacity { NumberAnimation { duration: 80 } }
+    }
+
     StackView {
         id: pageStack
         anchors {
@@ -174,7 +193,7 @@ ApplicationWindow {
             layer.enabled: typeof _hdrActive !== "undefined" && _hdrActive
             layer.format: ShaderEffectSource.RGBA16F
             layer.effect: ShaderEffect {
-                property real sdrWhiteNits: 203
+                property real sdrWhiteNits: Server.settings.sdrWhiteNits
                 vertexShader: "qrc:/qt/qml/mfplayer/hdr_pq.vert.qsb"
                 fragmentShader: "qrc:/qt/qml/mfplayer/hdr_pq.frag.qsb"
             }
@@ -408,7 +427,7 @@ ApplicationWindow {
             layer.enabled: typeof _hdrActive !== "undefined" && _hdrActive
             layer.format: ShaderEffectSource.RGBA16F
             layer.effect: ShaderEffect {
-                property real sdrWhiteNits: 203
+                property real sdrWhiteNits: Server.settings.sdrWhiteNits
                 vertexShader: "qrc:/qt/qml/mfplayer/hdr_pq.vert.qsb"
                 fragmentShader: "qrc:/qt/qml/mfplayer/hdr_pq.frag.qsb"
             }

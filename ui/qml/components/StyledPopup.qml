@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+pragma ValueTypeBehavior: Assertable
 import QtQuick
 import QtQuick.Controls
 
@@ -43,7 +45,7 @@ Popup {
         layer.enabled: root._hdr
         layer.format: ShaderEffectSource.RGBA16F
         layer.effect: ShaderEffect {
-            property real sdrWhiteNits: 203
+            property real sdrWhiteNits: Server.settings.sdrWhiteNits
             vertexShader: "qrc:/qt/qml/mfplayer/hdr_pq.vert.qsb"
             fragmentShader: "qrc:/qt/qml/mfplayer/hdr_pq.frag.qsb"
         }

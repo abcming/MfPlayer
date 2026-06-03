@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+pragma ValueTypeBehavior: Assertable
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -258,6 +260,16 @@ StyledPopup {
                                     Slider { id: _hdr; Layout.fillWidth: true; from: 100; to: 4000; stepSize: 100; value: Server.settings.hdrPeakBrightness
                                         onMoved: { Playback.setHdrPeakBrightness(value); Server.settings.hdrPeakBrightness = value } }
                                     Label { text: _hdr.value + " nits"; color: Theme.textMuted; font.pixelSize: 11; Layout.preferredWidth: 65 }
+                                }
+                            }
+
+                            // SDR UI brightness
+                            Column { width: parent.width; spacing: 4
+                                Label { text: Str.settingsSdrWhiteNits; color: Theme.textSecondary; font.pixelSize: 12 }
+                                RowLayout { width: parent.width; spacing: 10
+                                    Slider { id: _sdrNits; Layout.fillWidth: true; from: 80; to: 500; stepSize: 1; value: Server.settings.sdrWhiteNits
+                                        onMoved: Server.settings.sdrWhiteNits = value }
+                                    Label { text: _sdrNits.value + " nits"; color: Theme.textMuted; font.pixelSize: 11; Layout.preferredWidth: 65 }
                                 }
                             }
 

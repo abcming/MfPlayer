@@ -16,7 +16,7 @@ struct mpv_vulkan_fbo { void *image; int format, usage; int w, h; };
 }
 
 #include <QOpenGLContext>
-#include <QOpenGLFunctions>
+#include <QOpenGLExtraFunctions>
 #include <QQuickWindow>
 #include <QMutex>
 #include <QMutexLocker>
@@ -26,8 +26,8 @@ struct mpv_vulkan_fbo { void *image; int format, usage; int w, h; };
 #include <rhi/qrhi_platform.h>
 #if QT_CONFIG(vulkan)
 #include <vulkan/vulkan.h>
-#if __has_include(<private/qrhivulkan_p_p.h>)
-#include <private/qrhivulkan_p_p.h>
+#if __has_include(<private/qrhivulkan_p.h>)
+#include <private/qrhivulkan_p.h>
 #define MFPLAYER_HAS_VK_SWAPCHAIN_PRIVATE 1
 #endif
 #endif
@@ -121,75 +121,56 @@ void VideoRenderNode::render(const RenderState *state) {
         win->beginExternalCommands();
 
         QRhiSwapChain *sc = win->swapChain();
-        if (!sc) {
-            win->endExternalCommands();
-            return;
-        }
+        if (!sc) { win->endExternalCommands(); return; }
 
         VkImage vkImg = VK_NULL_HANDLE;
         QSize rtSize = st.nodeSize;
         VkFormat vkFmt = VK_FORMAT_B8G8R8A8_UNORM;
 
+#ifdef MFPLAYER_HAS_VK_SWAPCHAIN_PRIVATE
+        auto *vkSc = static_cast<QVkSwapChain *>(sc);
+        quint32 idx = vkSc->currentImageIndex;
+        vkImg = vkSc->imageRes[idx].image;
+        rtSize = sc->currentPixelSize();
+        QVariant hdr = win->property("_hdrActive");
+        vkFmt = (hdr.toBool())
+            ? VK_FORMAT_A2B10G10R10_UNORM_PACK32
+            : VK_FORMAT_B8G8R8A8_UNORM;
+#else
         QRhiRenderTarget *rt = sc->currentFrameRenderTarget();
-        int rtType = rt ? rt->resourceType() : -1;
-
-        if (rtType == QRhiResource::TextureRenderTarget) {
-            // Standard path: QRhiTextureRenderTarget with public API
+        if (rt && rt->resourceType() == QRhiResource::TextureRenderTarget) {
             auto *trt = static_cast<QRhiTextureRenderTarget *>(rt);
             const auto desc = trt->description();
             auto it = desc.cbeginColorAttachments();
             if (it != desc.cendColorAttachments() && it->texture()) {
-                QRhiTexture *colorTex = it->texture();
-                auto nt = colorTex->nativeTexture();
+                auto nt = it->texture()->nativeTexture();
                 vkImg = reinterpret_cast<VkImage>(nt.object);
-                rtSize = colorTex->pixelSize();
-                switch (colorTex->format()) {
-                case QRhiTexture::RGBA16F:  vkFmt = VK_FORMAT_R16G16B16A16_SFLOAT; break;
-                case QRhiTexture::RGB10A2:  vkFmt = VK_FORMAT_A2B10G10R10_UNORM_PACK32; break;
-                case QRhiTexture::RGBA8:    vkFmt = VK_FORMAT_R8G8B8A8_UNORM; break;
-                case QRhiTexture::BGRA8:
-                default:                    vkFmt = VK_FORMAT_B8G8R8A8_UNORM; break;
-                }
+                rtSize = it->texture()->pixelSize();
             }
-        }
-#ifdef MFPLAYER_HAS_VK_SWAPCHAIN_PRIVATE
-        else if (rtType == QRhiResource::SwapChainRenderTarget) {
-            // Qt 6 Vulkan swapchain: VkImage is hidden inside QVkSwapChain.
-            // Use Qt6::GuiPrivate to pierce the abstraction veil.
-            auto *vkSc = static_cast<QVkSwapChain *>(sc);
-            quint32 idx = vkSc->currentImageIndex;
-            vkImg = vkSc->imageRes[idx].image;
-            rtSize = sc->currentPixelSize();
-            // Format: HDR10 → A2B10G10R10, SDR → BGRA8
-            QVariant hdr = win->property("_hdrActive");
-            vkFmt = (hdr.toBool())
-                ? VK_FORMAT_A2B10G10R10_UNORM_PACK32
-                : VK_FORMAT_B8G8R8A8_UNORM;
         }
 #endif
 
         if (!vkImg || vkImg == VK_NULL_HANDLE) {
-            qWarning() << "MpvController: Vulkan RT type" << rtType
-                        << "- VkImage extraction failed";
             win->endExternalCommands();
             return;
         }
 
+        // ── Simple direct render (same shape as D3D11 path) ──────
+        // mpv/libplacebo handles all VkCommandBuffer work and layout
+        // transitions internally.  We just provide the target VkImage.
+        mpv_render_context_update(st.renderCtx);
+
         mpv_vulkan_fbo fbo{};
-        fbo.image  = vkImg;
+        fbo.image  = reinterpret_cast<void*>(vkImg);
         fbo.w      = rtSize.width();
         fbo.h      = rtSize.height();
         fbo.format = static_cast<int>(vkFmt);
-        fbo.usage  = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-                   | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-                   | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        fbo.usage  = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
         int advanced = 1;
-        int block = 0;
         mpv_render_param params[] = {
             {MPV_RENDER_PARAM_VULKAN_FBO, &fbo},
             {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
-            {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
             {MPV_RENDER_PARAM_INVALID, nullptr}
         };
         mpv_render_context_render(st.renderCtx, params);
@@ -202,7 +183,7 @@ void VideoRenderNode::render(const RenderState *state) {
 
 #ifdef Q_OS_WIN
     // ── D3D11 render API backend ──
-    {
+    if (rhi->backend() == QRhi::D3D11) {
         win->beginExternalCommands();
 
         auto *nat = static_cast<const QRhiD3D11NativeHandles *>(rhi->nativeHandles());
@@ -246,40 +227,70 @@ void VideoRenderNode::render(const RenderState *state) {
 #endif // Q_OS_WIN
 
     // ── OpenGL render API backend (fallback) ──
-    win->beginExternalCommands();
+    //
+    // gpu-next ignores MPV_RENDER_PARAM_FLIP_Y (documented as unsupported),
+    // so video comes out upside-down when rendering directly to Qt's FBO.
+    // Workaround: render mpv to a temporary offscreen FBO, then glBlitFramebuffer
+    // with swapped Y to the draw FBO — a pure-GPU copy, effectively zero cost.
+    {
+        win->beginExternalCommands();
 
-    auto *glCtx = QOpenGLContext::currentContext();
-    if (!glCtx) {
+        auto *glCtx = QOpenGLContext::currentContext();
+        if (!glCtx) {
+            win->endExternalCommands();
+            return;
+        }
+        auto *f = glCtx->extraFunctions();
+
+        GLint drawFbo = 0;
+        f->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFbo);
+
+        const int w = st.nodeSize.width();
+        const int h = st.nodeSize.height();
+
+        // Create temporary offscreen FBO + texture for mpv
+        GLuint offFbo = 0, offTex = 0;
+        f->glGenFramebuffers(1, &offFbo);
+        f->glGenTextures(1, &offTex);
+        f->glBindTexture(GL_TEXTURE_2D, offTex);
+        f->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
+                        GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        f->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        f->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        f->glBindFramebuffer(GL_FRAMEBUFFER, offFbo);
+        f->glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                  GL_TEXTURE_2D, offTex, 0);
+
+        mpv_render_context_update(st.renderCtx);
+
+        mpv_opengl_fbo mpvFbo{
+            static_cast<int>(offFbo), w, h, 0
+        };
+        int advanced = 1;
+        int block = 0;
+        mpv_render_param params[] = {
+            {MPV_RENDER_PARAM_OPENGL_FBO, &mpvFbo},
+            {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
+            {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
+            {MPV_RENDER_PARAM_INVALID, nullptr}
+        };
+        mpv_render_context_render(st.renderCtx, params);
+        mpv_render_context_report_swap(st.renderCtx);
+
+        // Blit with Y-flip:
+        // src rect (0,0)-(w,h) in offscreen FBO has origin at bottom-left
+        // dst rect (0,h)-(w,0) in draw FBO inverts Y → top-left origin
+        f->glBindFramebuffer(GL_READ_FRAMEBUFFER, offFbo);
+        f->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(drawFbo));
+        f->glBlitFramebuffer(0, 0, w, h,
+                             0, h, w, 0,
+                             GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+        f->glDeleteTextures(1, &offTex);
+        f->glDeleteFramebuffers(1, &offFbo);
+
         win->endExternalCommands();
-        return;
     }
-    auto *f = glCtx->functions();
-    GLint drawFbo = 0;
-    f->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFbo);
-
-    f->glViewport(0, 0, st.nodeSize.width(), st.nodeSize.height());
-    f->glDisable(GL_SCISSOR_TEST);
-
-    mpv_opengl_fbo mpvFbo{
-        drawFbo,
-        st.nodeSize.width(),
-        st.nodeSize.height(),
-        0
-    };
-    int flip_y = 1;
-    int advanced = 1;
-    int block = 0;
-    mpv_render_param params[] = {
-        {MPV_RENDER_PARAM_OPENGL_FBO, &mpvFbo},
-        {MPV_RENDER_PARAM_FLIP_Y, &flip_y},
-        {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
-        {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
-        {MPV_RENDER_PARAM_INVALID, nullptr}
-    };
-    mpv_render_context_render(st.renderCtx, params);
-    mpv_render_context_report_swap(st.renderCtx);
-
-    win->endExternalCommands();
 }
 
 void VideoRenderNode::releaseResources() {

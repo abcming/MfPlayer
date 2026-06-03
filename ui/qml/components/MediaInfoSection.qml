@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+pragma ValueTypeBehavior: Assertable
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -115,6 +117,7 @@ Column {
     Component {
         id: mediaInfoCardDelegate
         Rectangle {
+            required property var modelData
             width: 220
             height: 340
             radius: 8
@@ -157,6 +160,7 @@ Column {
                             return root.kvPairsForSub(stream)
                         }
                         RowLayout {
+                            required property var modelData
                             spacing: 6
                             Label {
                                 text: modelData.k; color: Theme.textSecondary; font.pixelSize: 10

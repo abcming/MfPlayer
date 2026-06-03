@@ -17,7 +17,7 @@ class DetailManager : public QObject {
     Q_PROPERTY(MediaModel* similarModel READ similarModel CONSTANT)
     Q_PROPERTY(MediaModel* personMoviesModel READ personMoviesModel CONSTANT)
     Q_PROPERTY(MediaModel* personSeriesModel READ personSeriesModel CONSTANT)
-    Q_PROPERTY(QVariantMap nextEpisode READ nextEpisode NOTIFY nextEpisodeChanged)
+    Q_PROPERTY(QVariantMap nextEpisode READ nextEpisode NOTIFY nextEpisodeChanged FINAL)
 
 public:
     explicit DetailManager(EmbyClient *emby, CacheStore *cache, QObject *parent = nullptr);

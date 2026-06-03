@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+pragma ValueTypeBehavior: Assertable
 import QtQuick
 
 // HdrPqOverlay — sRGB → PQ (ST.2084) correction shim for HDR10 swapchain.
@@ -14,7 +16,7 @@ Item {
     implicitWidth: _content.width
     implicitHeight: _content.height
 
-    property real sdrWhiteNits: 203
+    property real sdrWhiteNits: Server.settings.sdrWhiteNits
     readonly property bool hdrActive: typeof _hdrActive !== "undefined" && _hdrActive
 
     default property alias data: _content.data

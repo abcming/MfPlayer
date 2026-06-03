@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+pragma ValueTypeBehavior: Assertable
 import QtQuick
 import QtQuick.Controls
 
@@ -22,6 +24,8 @@ Column {
         Repeater {
             model: root.studios || []
             Row {
+                required property int index
+                required property var modelData
                 Label {
                     visible: index > 0
                     text: " · "

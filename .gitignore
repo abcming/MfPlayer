@@ -1,4 +1,3 @@
-CLAUDE.md
 build/
 deploy/
 
@@ -13,6 +12,7 @@ vcpkg_installed/
 mutagen.yml
 mutagen.yml.lock
 CMakeFiles/
+log.txt
 
 # IDE / editor
 .vs/

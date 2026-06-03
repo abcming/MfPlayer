@@ -14,21 +14,21 @@ class QQuickWindow;
 
 class MpvController : public QObject {
     Q_OBJECT
-    Q_PROPERTY(double position READ position NOTIFY positionChanged)
-    Q_PROPERTY(double duration READ duration NOTIFY durationChanged)
-    Q_PROPERTY(bool playing READ playing NOTIFY playingChanged)
-    Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged)
-    Q_PROPERTY(bool hasVideo READ hasVideo NOTIFY hasVideoChanged)
-    Q_PROPERTY(QVariantList tracks READ tracks NOTIFY tracksChanged)
-    Q_PROPERTY(int currentSid READ currentSid NOTIFY sidChanged)
-    Q_PROPERTY(int currentAid READ currentAid NOTIFY aidChanged)
-    Q_PROPERTY(QVariantMap videoOutParams READ videoOutParams NOTIFY videoOutParamsChanged)
-    Q_PROPERTY(QVariantMap videoParams READ videoParams NOTIFY videoParamsChanged)
-    Q_PROPERTY(QVariantMap audioOutParams READ audioOutParams NOTIFY audioOutParamsChanged)
-    Q_PROPERTY(QVariantMap stats READ stats NOTIFY statsChanged)
-    Q_PROPERTY(QVariantList chapters READ chapters NOTIFY chaptersChanged)
-    Q_PROPERTY(int currentChapter READ currentChapter NOTIFY chapterChanged)
-    Q_PROPERTY(double speed READ speed NOTIFY speedChanged)
+    Q_PROPERTY(double position READ position NOTIFY positionChanged FINAL)
+    Q_PROPERTY(double duration READ duration NOTIFY durationChanged FINAL)
+    Q_PROPERTY(bool playing READ playing NOTIFY playingChanged FINAL)
+    Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged FINAL)
+    Q_PROPERTY(bool hasVideo READ hasVideo NOTIFY hasVideoChanged FINAL)
+    Q_PROPERTY(QVariantList tracks READ tracks NOTIFY tracksChanged FINAL)
+    Q_PROPERTY(int currentSid READ currentSid NOTIFY sidChanged FINAL)
+    Q_PROPERTY(int currentAid READ currentAid NOTIFY aidChanged FINAL)
+    Q_PROPERTY(QVariantMap videoOutParams READ videoOutParams NOTIFY videoOutParamsChanged FINAL)
+    Q_PROPERTY(QVariantMap videoParams READ videoParams NOTIFY videoParamsChanged FINAL)
+    Q_PROPERTY(QVariantMap audioOutParams READ audioOutParams NOTIFY audioOutParamsChanged FINAL)
+    Q_PROPERTY(QVariantMap stats READ stats NOTIFY statsChanged FINAL)
+    Q_PROPERTY(QVariantList chapters READ chapters NOTIFY chaptersChanged FINAL)
+    Q_PROPERTY(int currentChapter READ currentChapter NOTIFY chapterChanged FINAL)
+    Q_PROPERTY(double speed READ speed NOTIFY speedChanged FINAL)
     Q_PROPERTY(QString mpvVersion READ mpvVersion CONSTANT)
 
 public:
@@ -53,6 +53,9 @@ public:
     Q_INVOKABLE void setSpeed(double speed);
     Q_INVOKABLE void setTargetPeak(int nits);
     Q_INVOKABLE void toggleStats();
+    /// Called after HDR swapchain detection. Sets target-trc/target-prim
+    /// to pq+bt.2020 (HDR) or srgb+bt.709 (SDR). Peak is left untouched.
+    Q_INVOKABLE void updateHdrDisplayActive(bool active);
 
     double position() const;
     double duration() const;
@@ -105,6 +108,21 @@ private:
     void observeStatsProperties(bool observe);
     static void wakeup(void *ctx);
     static QVariant mpvNodeToVariant(const mpv_node *node);
+
+    // ── Thread affinity ─────────────────────────────────────────────
+    // ALL member variables below MUST be accessed ONLY from the main thread,
+    // unless explicitly marked otherwise.
+    //
+    // wakeup() and the mpv render update callback run on mpv's internal
+    // threads, but marshal work to the main thread via:
+    //   - wakeup()      → QMetaObject::invokeMethod(Qt::QueuedConnection) → onMpvEvents()
+    //   - update callback → emit renderUpdateNeeded (auto QueuedConnection) → MpvRenderItem
+    //
+    // m_hasVideo is the ONLY member safe to read from any thread (std::atomic).
+    // m_mpv handle: mpv API functions are thread-safe; all our calls are from main thread.
+    // m_renderCtx: created lazily from VideoRenderNode::prepare() (render thread),
+    //   but write-once (never mutated after creation) and torn down in ~MpvController
+    //   under s_renderMutex.
 
     mpv_handle *m_mpv = nullptr;
     mpv_render_context *m_renderCtx = nullptr;

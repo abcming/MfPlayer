@@ -37,6 +37,7 @@ CacheStore::CacheStore(QObject *parent)
 }
 
 CacheStore::~CacheStore() {
+    m_stopFlag = true;
     {
         std::lock_guard<std::mutex> lock(m_workerMutex);
         for (auto &t : m_workerThreads)
