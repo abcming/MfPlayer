@@ -116,22 +116,21 @@ void VideoRenderNode::render(const RenderState *state) {
     if (rhi->backend() == QRhi::Vulkan) {
         win->beginExternalCommands();
 
-        // Grab the swapchain's current frame render target. This is a
-        // QRhiTextureRenderTarget wrapping the backbuffer VkImage.
+        // Grab the swapchain's current frame render target.
+        // Qt 6 Vulkan: currentFrameRenderTarget() returns
+        // QRhiSwapChainRenderTarget (resourceType=5), NOT
+        // QRhiTextureRenderTarget (type=4). They are siblings under
+        // QRhiRenderTarget — static_cast between them is UB/crash.
         QRhiSwapChain *sc = win->swapChain();
         QRhiTexture *colorTex = nullptr;
         QSize rtSize = st.nodeSize;
+        int rtType = -1;
 
         if (sc) {
             QRhiRenderTarget *rt = sc->currentFrameRenderTarget();
-            if (rt) {
-                qDebug() << "Vulkan swapchain RT type:" << rt->resourceType();
-            }
-            // Qt 6's Vulkan swapchain returns a QRhiSwapChainRenderTarget whose
-            // resourceType() is SwapChainRenderTarget (not TextureRenderTarget),
-            // but it still has color attachments. Accept either type.
-            if (rt && (rt->resourceType() == QRhiResource::TextureRenderTarget
-                    || rt->resourceType() == QRhiResource::SwapChainRenderTarget)) {
+            if (rt) rtType = rt->resourceType();
+
+            if (rtType == QRhiResource::TextureRenderTarget) {
                 auto *trt = static_cast<QRhiTextureRenderTarget *>(rt);
                 const auto desc = trt->description();
                 auto it = desc.cbeginColorAttachments();
@@ -143,8 +142,11 @@ void VideoRenderNode::render(const RenderState *state) {
         }
 
         if (!colorTex) {
-            qWarning() << "MpvController: Vulkan render target has no color attachment"
-                       << "(rt=" << (sc ? sc->currentFrameRenderTarget() : nullptr) << ")";
+            // SwapChainRenderTarget (type 5): Qt does not expose the
+            // color-buffer VkImage through public API. The swapchain
+            // images are managed internally by QRhiSwapChain.
+            qWarning() << "MpvController: Vulkan RT type" << rtType
+                       << "- VkImage extraction not yet supported";
             win->endExternalCommands();
             return;
         }
