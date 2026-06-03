@@ -26,6 +26,10 @@ struct mpv_vulkan_fbo { void *image; int format, usage; int w, h; };
 #include <rhi/qrhi_platform.h>
 #if QT_CONFIG(vulkan)
 #include <vulkan/vulkan.h>
+#if __has_include(<private/qrhivulkan_p_p.h>)
+#include <private/qrhivulkan_p_p.h>
+#define MFPLAYER_HAS_VK_SWAPCHAIN_PRIVATE 1
+#endif
 #endif
 
 namespace {
@@ -116,59 +120,59 @@ void VideoRenderNode::render(const RenderState *state) {
     if (rhi->backend() == QRhi::Vulkan) {
         win->beginExternalCommands();
 
-        // Grab the swapchain's current frame render target.
-        // Qt 6 Vulkan: currentFrameRenderTarget() returns
-        // QRhiSwapChainRenderTarget (resourceType=5), NOT
-        // QRhiTextureRenderTarget (type=4). They are siblings under
-        // QRhiRenderTarget — static_cast between them is UB/crash.
         QRhiSwapChain *sc = win->swapChain();
-        QRhiTexture *colorTex = nullptr;
+        if (!sc) {
+            win->endExternalCommands();
+            return;
+        }
+
+        VkImage vkImg = VK_NULL_HANDLE;
         QSize rtSize = st.nodeSize;
-        int rtType = -1;
+        VkFormat vkFmt = VK_FORMAT_B8G8R8A8_UNORM;
 
-        if (sc) {
-            QRhiRenderTarget *rt = sc->currentFrameRenderTarget();
-            if (rt) rtType = rt->resourceType();
+        QRhiRenderTarget *rt = sc->currentFrameRenderTarget();
+        int rtType = rt ? rt->resourceType() : -1;
 
-            if (rtType == QRhiResource::TextureRenderTarget) {
-                auto *trt = static_cast<QRhiTextureRenderTarget *>(rt);
-                const auto desc = trt->description();
-                auto it = desc.cbeginColorAttachments();
-                if (it != desc.cendColorAttachments() && it->texture()) {
-                    colorTex = it->texture();
-                    rtSize = it->texture()->pixelSize();
+        if (rtType == QRhiResource::TextureRenderTarget) {
+            // Standard path: QRhiTextureRenderTarget with public API
+            auto *trt = static_cast<QRhiTextureRenderTarget *>(rt);
+            const auto desc = trt->description();
+            auto it = desc.cbeginColorAttachments();
+            if (it != desc.cendColorAttachments() && it->texture()) {
+                QRhiTexture *colorTex = it->texture();
+                auto nt = colorTex->nativeTexture();
+                vkImg = reinterpret_cast<VkImage>(nt.object);
+                rtSize = colorTex->pixelSize();
+                switch (colorTex->format()) {
+                case QRhiTexture::RGBA16F:  vkFmt = VK_FORMAT_R16G16B16A16_SFLOAT; break;
+                case QRhiTexture::RGB10A2:  vkFmt = VK_FORMAT_A2B10G10R10_UNORM_PACK32; break;
+                case QRhiTexture::RGBA8:    vkFmt = VK_FORMAT_R8G8B8A8_UNORM; break;
+                case QRhiTexture::BGRA8:
+                default:                    vkFmt = VK_FORMAT_B8G8R8A8_UNORM; break;
                 }
             }
         }
-
-        if (!colorTex) {
-            // SwapChainRenderTarget (type 5): Qt does not expose the
-            // color-buffer VkImage through public API. The swapchain
-            // images are managed internally by QRhiSwapChain.
-            qWarning() << "MpvController: Vulkan RT type" << rtType
-                       << "- VkImage extraction not yet supported";
-            win->endExternalCommands();
-            return;
+#ifdef MFPLAYER_HAS_VK_SWAPCHAIN_PRIVATE
+        else if (rtType == QRhiResource::SwapChainRenderTarget) {
+            // Qt 6 Vulkan swapchain: VkImage is hidden inside QVkSwapChain.
+            // Use Qt6::GuiPrivate to pierce the abstraction veil.
+            auto *vkSc = static_cast<QVkSwapChain *>(sc);
+            quint32 idx = vkSc->currentImageIndex;
+            vkImg = vkSc->imageRes[idx].image;
+            rtSize = sc->currentPixelSize();
+            // Format: HDR10 → A2B10G10R10, SDR → BGRA8
+            QVariant hdr = win->property("_hdrActive");
+            vkFmt = (hdr.toBool())
+                ? VK_FORMAT_A2B10G10R10_UNORM_PACK32
+                : VK_FORMAT_B8G8R8A8_UNORM;
         }
+#endif
 
-        auto nt = colorTex->nativeTexture();
-        VkImage vkImg = reinterpret_cast<VkImage>(nt.object);
         if (!vkImg || vkImg == VK_NULL_HANDLE) {
-            qWarning() << "MpvController: Vulkan color attachment has no native VkImage";
+            qWarning() << "MpvController: Vulkan RT type" << rtType
+                        << "- VkImage extraction failed";
             win->endExternalCommands();
             return;
-        }
-
-        // Map QRhiTexture::Format → VkFormat for common swapchain formats.
-        // Qt 6.11 doesn't expose SRGB formats in the public enum, so default
-        // to BGRA8 which covers the vast majority of SDR swapchains.
-        VkFormat vkFmt;
-        switch (colorTex->format()) {
-        case QRhiTexture::RGBA16F:  vkFmt = VK_FORMAT_R16G16B16A16_SFLOAT; break;
-        case QRhiTexture::RGB10A2:  vkFmt = VK_FORMAT_A2B10G10R10_UNORM_PACK32; break;
-        case QRhiTexture::RGBA8:    vkFmt = VK_FORMAT_R8G8B8A8_UNORM; break;
-        case QRhiTexture::BGRA8:
-        default:                    vkFmt = VK_FORMAT_B8G8R8A8_UNORM; break;
         }
 
         mpv_vulkan_fbo fbo{};
