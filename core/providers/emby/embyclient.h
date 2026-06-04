@@ -70,7 +70,7 @@ public slots:
 
 public:
     void fetchPlaybackInfo(const QString &itemId,
-                            std::function<void(const QString &streamUrl, const QString &playSessionId)> callback,
+                            std::function<void(const QString &streamUrl, const QString &playSessionId, const QJsonArray &mediaSources)> callback,
                             const QString &mediaSourceId = QString(),
                             int subtitleStreamIndex = -1);
 

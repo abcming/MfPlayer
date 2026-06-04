@@ -18,6 +18,7 @@ class PlaybackController : public QObject {
     Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged FINAL)
     Q_PROPERTY(bool fullscreen READ fullscreen NOTIFY fullscreenChanged FINAL)
     Q_PROPERTY(MpvController* mpv READ mpv CONSTANT)
+    Q_PROPERTY(QJsonObject currentItemDetail READ currentItemDetail NOTIFY currentItemDetailChanged FINAL)
 
 public:
     explicit PlaybackController(EmbyClient *emby, CacheStore *cache, SettingsStore *settings, QObject *parent = nullptr);
@@ -29,13 +30,14 @@ public:
     int volume() const;
     bool fullscreen() const;
     MpvController *mpv() const { return m_mpv; }
+    QJsonObject currentItemDetail() const { return m_currentItemDetail; }
 
 public slots:
     void playItem(const QString &itemId, qint64 startTimeTicks = 0,
                   const QString &mediaSourceId = QString(),
                   int audioIndex = -1, int subtitleIndex = -2);
     void playLocalFile(const QString &filePath);
-    Q_INVOKABLE QVariantList scanFolderForLocalPlaylist(const QString &filePath) const;
+    Q_INVOKABLE void scanFolderForLocalPlaylistAsync(const QString &filePath);
     void pause();
     void resume();
     void stop();
@@ -59,6 +61,8 @@ signals:
     void endOfFile();
     void fullscreenChanged();
     void resumeProgressUpdated();
+    void localPlaylistReady(QVariantList playlist);
+    void currentItemDetailChanged();
 
 private:
     void connectMpvSignals();

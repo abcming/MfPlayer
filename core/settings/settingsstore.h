@@ -2,6 +2,8 @@
 #include <QObject>
 #include <QSettings>
 
+class QTimer;
+
 class SettingsStore : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString embyServer READ embyServer WRITE setEmbyServer NOTIFY embyServerChanged FINAL)
@@ -128,4 +130,16 @@ signals:
 
 private:
     QSettings m_settings;
+    // Cached values for debounced properties (write delayed by QTimer)
+    int m_hdrPeakBrightness = 1000;
+    int m_sdrWhiteNits = 203;
+    int m_seekForwardStep = 5;
+    int m_seekBackwardStep = 5;
+    int m_windowWidth = 0;
+    int m_windowHeight = 0;
+    QTimer *m_hdrWriteTimer = nullptr;
+    QTimer *m_sdrWriteTimer = nullptr;
+    QTimer *m_seekFwdWriteTimer = nullptr;
+    QTimer *m_seekBackWriteTimer = nullptr;
+    QTimer *m_windowSizeTimer = nullptr;
 };

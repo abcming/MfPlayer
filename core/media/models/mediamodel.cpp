@@ -65,6 +65,7 @@ void MediaModel::setItems(const QJsonArray &items) {
     beginResetModel();
     m_items.clear();
     m_idToIndex.clear();
+    m_idToIndex.reserve(items.size());
     int i = 0;
     for (const auto &val : items) {
         Item item = fromJson(val.toObject());
@@ -72,12 +73,14 @@ void MediaModel::setItems(const QJsonArray &items) {
         m_items.append(std::move(item));
     }
     endResetModel();
+    rebuildAlphaIndex();
 }
 
 void MediaModel::appendItems(const QJsonArray &items) {
     if (items.isEmpty()) return;
     int start = m_items.size();
     beginInsertRows({}, start, start + items.size() - 1);
+    m_idToIndex.reserve(m_idToIndex.size() + items.size());
     int i = start;
     for (const auto &val : items) {
         Item item = fromJson(val.toObject());
@@ -85,14 +88,44 @@ void MediaModel::appendItems(const QJsonArray &items) {
         m_items.append(std::move(item));
     }
     endInsertRows();
+    extendAlphaIndex(start);
+}
+
+void MediaModel::rebuildAlphaIndex() {
+    m_alphaIndex.clear();
+    for (int i = 0; i < m_items.size(); ++i) {
+        const QString &name = !m_items[i].sortName.isEmpty()
+            ? m_items[i].sortName : m_items[i].name;
+        if (name.isEmpty()) continue;
+        QChar ch = name[0].toUpper();
+        QString key = (ch >= 'A' && ch <= 'Z') ? QString(ch) : QStringLiteral("#");
+        if (!m_alphaIndex.contains(key))
+            m_alphaIndex.insert(key, i);
+    }
+    emit alphaIndexChanged();
+}
+
+void MediaModel::extendAlphaIndex(int fromRow) {
+    for (int i = fromRow; i < m_items.size(); ++i) {
+        const QString &name = !m_items[i].sortName.isEmpty()
+            ? m_items[i].sortName : m_items[i].name;
+        if (name.isEmpty()) continue;
+        QChar ch = name[0].toUpper();
+        QString key = (ch >= 'A' && ch <= 'Z') ? QString(ch) : QStringLiteral("#");
+        if (!m_alphaIndex.contains(key))
+            m_alphaIndex.insert(key, i);
+    }
+    emit alphaIndexChanged();
 }
 
 void MediaModel::clear() {
     beginResetModel();
     m_items.clear();
     m_idToIndex.clear();
+    m_alphaIndex.clear();
     m_lastSourceJson = QJsonArray();
     endResetModel();
+    emit alphaIndexChanged();
 }
 
 QVariantMap MediaModel::get(int row) const {
@@ -120,18 +153,35 @@ QVariantMap MediaModel::get(int row) const {
     };
 }
 
-QVariantMap MediaModel::buildAlphaIndex() const {
-    QVariantMap map;
-    for (int i = 0; i < m_items.size(); ++i) {
-        const QString &name = !m_items[i].sortName.isEmpty()
-            ? m_items[i].sortName : m_items[i].name;
-        if (name.isEmpty()) continue;
-        QChar ch = name[0].toUpper();
-        QString key = (ch >= 'A' && ch <= 'Z') ? QString(ch) : QStringLiteral("#");
-        if (!map.contains(key))
-            map.insert(key, i);
+QVariantList MediaModel::getAllItems() const {
+    QVariantList result;
+    result.reserve(m_items.size());
+    for (const auto &item : m_items) {
+        result.append(QVariantMap{
+            {"itemId", item.id},
+            {"itemName", item.name},
+            {"itemType", item.type},
+            {"imageUrl", item.imageUrl},
+            {"year", item.year},
+            {"overview", item.overview},
+            {"parentId", item.parentId},
+            {"indexNumber", item.indexNumber},
+            {"childCount", item.childCount},
+            {"seriesName", item.seriesName},
+            {"sortName", item.sortName},
+            {"playbackPositionTicks", item.playbackPositionTicks},
+            {"playedPercentage", item.playedPercentage},
+            {"runTimeTicks", item.runTimeTicks},
+            {"played", item.played},
+            {"backdropUrl", item.backdropUrl},
+            {"isFavorite", item.isFavorite},
+        });
     }
-    return map;
+    return result;
+}
+
+QVariantMap MediaModel::buildAlphaIndex() const {
+    return m_alphaIndex;  // incrementally maintained, no per-call rebuild needed
 }
 
 MediaModel::Item MediaModel::fromJson(const QJsonObject &obj) {
@@ -184,12 +234,10 @@ MediaModel::Item MediaModel::fromJson(const QJsonObject &obj) {
         imageTag = tags["Thumb"].toString();
     }
     // Fallback to backdrop
-    if (imageTag.isEmpty()) {
-        const auto bdTags = obj["BackdropImageTags"].toArray();
-        if (!bdTags.isEmpty()) {
-            imageTag = bdTags.first().toString();
-            imageType = "Backdrop";
-        }
+    const auto bdTags = obj["BackdropImageTags"].toArray();
+    if (imageTag.isEmpty() && !bdTags.isEmpty()) {
+        imageTag = bdTags.first().toString();
+        imageType = "Backdrop";
     }
 
     if (!imageTag.isEmpty()) {
@@ -199,8 +247,7 @@ MediaModel::Item MediaModel::fromJson(const QJsonObject &obj) {
             item.imageUrl = QString("/emby/Items/%1/Images/%2?tag=%3&maxWidth=360&quality=80").arg(item.id, imageType, imageTag);
     }
 
-    // Always extract backdrop URL for resume cards etc.
-    const auto bdTags = obj["BackdropImageTags"].toArray();
+    // Always extract backdrop URL for resume cards etc. (bdTags already parsed above)
     if (!bdTags.isEmpty())
         item.backdropUrl = QString("/emby/Items/%1/Images/Backdrop/0?tag=%2").arg(item.id, bdTags.first().toString());
 

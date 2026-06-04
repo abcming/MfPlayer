@@ -73,6 +73,7 @@ HdrPqOverlay {
                     width: parent.width
                     height: 113
                     imgRadius: 6
+                    lazyLoad: true
                     embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
                 }
 
@@ -137,6 +138,7 @@ HdrPqOverlay {
                     RoundedImage {
                         anchors.fill: parent
                         imgRadius: 4
+                        lazyLoad: true
                         externalHover: _resumeHover.hovered
                         embyUrl: {
                             if (!Server.emby) return ""
@@ -284,6 +286,7 @@ HdrPqOverlay {
                     RoundedImage {
                         anchors.fill: parent
                         imgRadius: 6
+                        lazyLoad: true
                         externalHover: _latestHover.hovered
                         embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
                     }
@@ -387,6 +390,7 @@ HdrPqOverlay {
                     RoundedImage {
                         anchors.fill: parent
                         imgRadius: 6
+                        lazyLoad: true
                         externalHover: _personHover.hovered
                         embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
                     }
@@ -644,6 +648,7 @@ HdrPqOverlay {
                             RoundedImage {
                                 anchors.fill: parent
                                 imgRadius: 14
+                                lazyLoad: true
                                 visible: Server.embyConnected
                                 embyUrl: Server.emby && Server.emby.userId && Server.emby.accessToken
                                     ? Server.emby.imageUrl("/emby/Users/" + Server.emby.userId + "/Images/Primary?maxWidth=64&quality=90&api_key=" + Server.emby.accessToken)

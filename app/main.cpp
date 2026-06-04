@@ -10,11 +10,13 @@
 #include <QTimer>
 #include <QColorSpace>
 #include <QSurfaceFormat>
+#include <QThreadPool>
 #include <rhi/qrhi.h>
 #ifdef Q_OS_WIN
 #include <dwmapi.h>
 #endif
 #include "core/cache/imagecacheprovider.h"
+#include "core/io_pool.h"
 #include "core/playback/playbackcontroller.h"
 #include "core/library/librarybrowser.h"
 #include "core/detail/detailmanager.h"
@@ -32,6 +34,12 @@ static void setDarkTitleBar(QWindow *w) {
 }
 #endif
 #include "platform/rendering/mpv/mpvrenderitem.h"
+
+static QThreadPool s_ioPool;
+
+QThreadPool &ioPool() {
+    return s_ioPool;
+}
 
 int main(int argc, char *argv[]) {
 
@@ -72,6 +80,10 @@ int main(int argc, char *argv[]) {
   app.setWindowIcon(QIcon(":/mfplayer/resources/appicon.ico"));
 
   qmlRegisterType<MpvRenderItem>("mfplayer", 1, 0, "MpvRenderItem");
+
+  // Configure I/O thread pool: 2-4 threads for filesystem work.
+  // Separate from globalInstance() so disk-blocked threads don't starve CPU tasks.
+  s_ioPool.setMaxThreadCount(std::max(2, QThread::idealThreadCount() / 2));
 
   QQmlApplicationEngine qmlEngine;
 

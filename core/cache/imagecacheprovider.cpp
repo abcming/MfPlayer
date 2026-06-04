@@ -35,7 +35,6 @@ ImageCacheResponse::~ImageCacheResponse() {
 
 void ImageCacheResponse::process() {
     if (m_path.isEmpty()) {
-        QMutexLocker lock(&m_pixmapMutex);
         m_pixmap = QPixmap(1, 1);
         m_pixmap.fill(Qt::transparent);
         // Queue finished() to main thread — safe if object is destroyed before delivery
@@ -65,27 +64,27 @@ void ImageCacheResponse::process() {
         decoded = QPixmap(1, 1);
         decoded.fill(Qt::transparent);
     } else {
-        // Insert into shared memory cache (protected by provider's mutex)
+        // Publish pixmap BEFORE cache insert — textureFactory() runs after
+        // finished() signal, so ordering guarantee makes m_pixmapMutex unnecessary.
+        m_pixmap = decoded;
+        // Insert into shared memory cache (protected by provider's mutex).
+        // Use std::move to avoid QPixmap deep-copy under the mutex.
         QMutexLocker lock(m_cacheMutex);
         m_lru->push_front(m_id);
-        (*m_memCache)[m_id] = {decoded, m_lru->begin()};
+        (*m_memCache)[m_id] = {std::move(decoded), m_lru->begin()};
         while (static_cast<int>(m_lru->size()) > m_maxEntries) {
             m_memCache->erase(m_lru->back());
             m_lru->pop_back();
         }
     }
 
-    // Publish decoded pixmap under our own mutex — textureFactory() reads it
-    {
-        QMutexLocker lock(&m_pixmapMutex);
-        m_pixmap = decoded;
-    }
     // Queue finished() to main thread — safe if object is destroyed before delivery
     QMetaObject::invokeMethod(this, [this]() { emit finished(); }, Qt::QueuedConnection);
 }
 
 QQuickTextureFactory *ImageCacheResponse::textureFactory() const {
-    QMutexLocker lock(&m_pixmapMutex);
+    // No mutex needed: m_pixmap is set before finished() is emitted,
+    // and Qt only calls textureFactory() after finished().
     return QQuickTextureFactory::textureFactoryForImage(m_pixmap.toImage());
 }
 
@@ -128,75 +127,4 @@ QQuickImageResponse *ImageCacheProvider::requestImageResponse(const QString &id,
                                   /*skipProcess=*/false);
 }
 
-// ── Sync fallback (for non-async Image elements, e.g. logo) ──────
-
-QPixmap ImageCacheProvider::requestPixmap(const QString &id, QSize *size, const QSize &requestedSize) {
-    int slash = id.lastIndexOf('/');
-    QString hash = slash > 0 ? id.left(slash) : id;
-
-    // Fast path: memory cache hit
-    {
-        QMutexLocker lock(&m_mutex);
-        auto it = m_memCache.find(id);
-        if (it != m_memCache.end()) {
-            m_lru.splice(m_lru.begin(), m_lru, it->second.lruIt);  // O(1) move to front
-            QPixmap px = it->second.pixmap;
-            if (size) *size = px.size();
-            return px;
-        }
-    }
-
-    // Resolve file path
-    QString path;
-    {
-        QMutexLocker lock(&m_mutex);
-        path = m_cache->resolveImagePath(hash);
-    }
-
-    if (path.isEmpty()) {
-        if (size) *size = QSize();
-        QPixmap px(1, 1);
-        px.fill(Qt::transparent);
-        return px;
-    }
-
-    // Disk I/O + image decode (sync — only used for non-async elements)
-    QPixmap px;
-    QSize target = requestedSize.isValid() && requestedSize.width() > 0
-        ? requestedSize : QSize();
-    if (target.isValid()) {
-        QImageReader reader(path);
-        reader.setAutoTransform(true);
-        QSize orig = reader.size();
-        if (orig.isValid() && (orig.width() > target.width() || orig.height() > target.height())) {
-            QSize scaled = QSizeF(orig).scaled(QSizeF(target), Qt::KeepAspectRatio).toSize();
-            reader.setScaledSize(scaled);
-        }
-        QImage img = reader.read();
-        if (!img.isNull())
-            px = QPixmap::fromImage(img);
-    }
-    if (px.isNull())
-        px.load(path);
-
-    if (px.isNull()) {
-        px = QPixmap(1, 1);
-        px.fill(Qt::transparent);
-        if (size) *size = px.size();
-        return px;
-    }
-
-    // Insert into memory cache
-    {
-        QMutexLocker lock(&m_mutex);
-        m_lru.push_front(id);
-        m_memCache[id] = {px, m_lru.begin()};
-        while (static_cast<int>(m_lru.size()) > kMaxEntries) {
-            m_memCache.erase(m_lru.back());
-            m_lru.pop_back();
-        }
-    }
-
-    if (size) *size = px.size();
-    return px;
-}
+// requestPixmap() sync fallback removed — all QML images use asynchronous: true.

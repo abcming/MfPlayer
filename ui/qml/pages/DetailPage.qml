@@ -143,10 +143,8 @@ HdrPqOverlay {
     }
 
     function buildPlaylistData() {
-        var arr = []
-        for (var i = 0; i < Detail.episodeModel.rowCount(); i++)
-            arr.push(Detail.episodeModel.get(i))
-        return arr
+        // Single C++ call avoids O(n) QML↔C++ boundary crossings
+        return Detail.episodeModel.getAllItems()
     }
 
     // ── Shared push-to-player helper ──
@@ -169,6 +167,7 @@ HdrPqOverlay {
                 episodeIndex: startIdx,
                 playlistData: playlist,
                 itemType: Str.typeEpisode,
+                itemData: detailRoot.itemData,
                 startTimeTicks: resumeTicks,
                 mediaSourceId: detailRoot.selectedVideoId || "",
                 audioIndex: detailRoot.selectedAudioIdx,

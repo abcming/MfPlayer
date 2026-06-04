@@ -1,10 +1,55 @@
 #include "settingsstore.h"
+#include <QTimer>
 
 SettingsStore::SettingsStore(QObject *parent)
     : QObject(parent)
     , m_settings(QSettings::IniFormat, QSettings::UserScope,
                  "mfplayer", "mfplayer")
 {
+    // Initialize cached values from QSettings
+    m_hdrPeakBrightness = m_settings.value("player/hdrPeakBrightness", 1000).toInt();
+    m_sdrWhiteNits = m_settings.value("player/sdrWhiteNits", 203).toInt();
+    m_seekForwardStep = m_settings.value("player/seekForwardStep", 5).toInt();
+    m_seekBackwardStep = m_settings.value("player/seekBackwardStep", 5).toInt();
+    m_windowWidth = m_settings.value("ui/width", 0).toInt();
+    m_windowHeight = m_settings.value("ui/height", 0).toInt();
+
+    // Set up debounce timers (avoids writing to disk on every drag pixel / resize event)
+    m_hdrWriteTimer = new QTimer(this);
+    m_hdrWriteTimer->setSingleShot(true);
+    m_hdrWriteTimer->setInterval(200);
+    connect(m_hdrWriteTimer, &QTimer::timeout, this, [this]() {
+        m_settings.setValue("player/hdrPeakBrightness", m_hdrPeakBrightness);
+    });
+
+    m_sdrWriteTimer = new QTimer(this);
+    m_sdrWriteTimer->setSingleShot(true);
+    m_sdrWriteTimer->setInterval(200);
+    connect(m_sdrWriteTimer, &QTimer::timeout, this, [this]() {
+        m_settings.setValue("player/sdrWhiteNits", m_sdrWhiteNits);
+    });
+
+    m_seekFwdWriteTimer = new QTimer(this);
+    m_seekFwdWriteTimer->setSingleShot(true);
+    m_seekFwdWriteTimer->setInterval(200);
+    connect(m_seekFwdWriteTimer, &QTimer::timeout, this, [this]() {
+        m_settings.setValue("player/seekForwardStep", m_seekForwardStep);
+    });
+
+    m_seekBackWriteTimer = new QTimer(this);
+    m_seekBackWriteTimer->setSingleShot(true);
+    m_seekBackWriteTimer->setInterval(200);
+    connect(m_seekBackWriteTimer, &QTimer::timeout, this, [this]() {
+        m_settings.setValue("player/seekBackwardStep", m_seekBackwardStep);
+    });
+
+    m_windowSizeTimer = new QTimer(this);
+    m_windowSizeTimer->setSingleShot(true);
+    m_windowSizeTimer->setInterval(200);
+    connect(m_windowSizeTimer, &QTimer::timeout, this, [this]() {
+        m_settings.setValue("ui/width", m_windowWidth);
+        m_settings.setValue("ui/height", m_windowHeight);
+    });
 }
 
 QString SettingsStore::embyServer() const {
@@ -58,42 +103,46 @@ void SettingsStore::setVolume(int vol) {
 }
 
 int SettingsStore::hdrPeakBrightness() const {
-    return m_settings.value("player/hdrPeakBrightness", 1000).toInt();
+    return m_hdrPeakBrightness;
 }
 void SettingsStore::setHdrPeakBrightness(int nits) {
-    if (nits != hdrPeakBrightness()) {
-        m_settings.setValue("player/hdrPeakBrightness", nits);
+    if (nits != m_hdrPeakBrightness) {
+        m_hdrPeakBrightness = nits;
         emit hdrPeakBrightnessChanged();
+        m_hdrWriteTimer->start();
     }
 }
 
 int SettingsStore::sdrWhiteNits() const {
-    return m_settings.value("player/sdrWhiteNits", 203).toInt();
+    return m_sdrWhiteNits;
 }
 void SettingsStore::setSdrWhiteNits(int nits) {
-    if (nits != sdrWhiteNits()) {
-        m_settings.setValue("player/sdrWhiteNits", nits);
+    if (nits != m_sdrWhiteNits) {
+        m_sdrWhiteNits = nits;
         emit sdrWhiteNitsChanged();
+        m_sdrWriteTimer->start();
     }
 }
 
 int SettingsStore::windowWidth() const {
-    return m_settings.value("ui/width", 0).toInt();
+    return m_windowWidth;
 }
 void SettingsStore::setWindowWidth(int w) {
-    if (w != windowWidth()) {
-        m_settings.setValue("ui/width", w);
+    if (w != m_windowWidth) {
+        m_windowWidth = w;
         emit windowSizeChanged();
+        m_windowSizeTimer->start();
     }
 }
 
 int SettingsStore::windowHeight() const {
-    return m_settings.value("ui/height", 0).toInt();
+    return m_windowHeight;
 }
 void SettingsStore::setWindowHeight(int h) {
-    if (h != windowHeight()) {
-        m_settings.setValue("ui/height", h);
+    if (h != m_windowHeight) {
+        m_windowHeight = h;
         emit windowSizeChanged();
+        m_windowSizeTimer->start();
     }
 }
 
@@ -148,22 +197,24 @@ void SettingsStore::setActionAfterEnd(int v) {
 }
 
 int SettingsStore::seekForwardStep() const {
-    return m_settings.value("player/seekForwardStep", 5).toInt();
+    return m_seekForwardStep;
 }
 void SettingsStore::setSeekForwardStep(int v) {
-    if (v != seekForwardStep()) {
-        m_settings.setValue("player/seekForwardStep", v);
+    if (v != m_seekForwardStep) {
+        m_seekForwardStep = v;
         emit seekForwardStepChanged();
+        m_seekFwdWriteTimer->start();
     }
 }
 
 int SettingsStore::seekBackwardStep() const {
-    return m_settings.value("player/seekBackwardStep", 5).toInt();
+    return m_seekBackwardStep;
 }
 void SettingsStore::setSeekBackwardStep(int v) {
-    if (v != seekBackwardStep()) {
-        m_settings.setValue("player/seekBackwardStep", v);
+    if (v != m_seekBackwardStep) {
+        m_seekBackwardStep = v;
         emit seekBackwardStepChanged();
+        m_seekBackWriteTimer->start();
     }
 }
 

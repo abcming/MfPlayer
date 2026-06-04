@@ -35,6 +35,17 @@ Item {
     property var playlistData: []
     property string itemType: ""
     property var itemData: null
+    // MediaSources for video version selector — prefer itemData (passed from DetailPage),
+    // fall back to Playback.currentItemDetail (populated from PlaybackInfo response).
+    // This covers episodes played from a series page where the episode detail wasn't pre-cached.
+    property var _versionSources: {
+        if (itemData && itemData.MediaSources && itemData.MediaSources.length)
+            return itemData.MediaSources
+        let detail = Playback.currentItemDetail
+        if (detail && detail.MediaSources && detail.MediaSources.length)
+            return detail.MediaSources
+        return []
+    }
     property double startTimeTicks: 0
     property string mediaSourceId: ""
     property int audioIndex: -1
@@ -54,21 +65,9 @@ Item {
                 episodeTitle = localFile.split('/').pop().split('\\').pop()
                 if (!_localPlayStarted) {
                     _localPlayStarted = true
-
-                    // Build playlist from folder scan
-                    var pl = Playback.scanFolderForLocalPlaylist(localFile)
-                    playlistData = pl
-
-                    // Find current file via C++ canonical-path marker
-                    for (var i = 0; i < pl.length; i++) {
-                        if (pl[i].isCurrent) {
-                            episodeIndex = i
-                            break
-                        }
-                    }
-                    if (episodeIndex < 0) episodeIndex = 0
-
-                    Playback.playLocalFile(localFile)
+                    // Offload folder scan to I/O pool (non-blocking).
+                    // localPlaylistReady signal will handle the result.
+                    Playback.scanFolderForLocalPlaylistAsync(localFile)
                 }
             } else if (itemId) {
                 Playback.playItem(itemId, startTimeTicks, mediaSourceId, audioIndex, subtitleIndex)
@@ -241,10 +240,7 @@ Item {
             Button {
                 id: videoVerBtn
                 focusPolicy: Qt.NoFocus
-                visible: {
-                    let srcs = (itemData ? itemData.MediaSources : []) || []
-                    return srcs.length > 1
-                }
+                visible: _versionSources.length > 1
                 flat: true
                 width: 36; height: 36
 
@@ -272,7 +268,7 @@ Item {
                     anchors.fill: parent
                     implicitHeight: Math.min(contentHeight, 200)
                     clip: true; spacing: 2
-                    model: (itemData ? itemData.MediaSources : []) || []
+                    model: _versionSources
 
                     delegate: ItemDelegate {
                         required property var modelData
@@ -735,6 +731,22 @@ Item {
         } else if (k === s.keyVolumeDown) {
             Playback.setVolume(Math.max(0, Playback.volume - 5))
             event.accepted = true
+        }
+    }
+
+    // ── Async local playlist scan result ──
+    Connections {
+        target: Playback
+        function onLocalPlaylistReady(pl) {
+            playlistData = pl
+            for (var i = 0; i < pl.length; i++) {
+                if (pl[i].isCurrent) {
+                    episodeIndex = i
+                    break
+                }
+            }
+            if (episodeIndex < 0) episodeIndex = 0
+            Playback.playLocalFile(localFile)
         }
     }
 

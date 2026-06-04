@@ -1,6 +1,7 @@
 #include "common/version.h"
 #include "common/constants.h"
 #include "core/cache/cachestore.h"
+#include "core/cache/dbworker.h"
 #include "core/network/curlengine.h"
 #include <QMutexLocker>
 #include <QHash>
@@ -34,19 +35,23 @@ CacheStore::CacheStore(QObject *parent)
 {
     m_cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
                  + "/mfplayer/images";
+
+    // DBWorker lives on its own thread — no parent to avoid QObject thread affinity issues
+    m_dbWorker = new DBWorker(
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+        + "/mfplayer/cache.db");
 }
 
 CacheStore::~CacheStore() {
     m_stopFlag = true;
-    {
-        std::lock_guard<std::mutex> lock(m_workerMutex);
-        for (auto &t : m_workerThreads)
-            if (t.joinable()) t.join();
-    }
-    if (m_clearThread.joinable())
-        m_clearThread.join();
-    if (m_expireThread.joinable())
-        m_expireThread.join();
+
+    // Stop DBWorker first — drains queue, quits thread
+    delete m_dbWorker;
+
+    // Join download worker threads
+    for (auto &t : m_workerThreads)
+        if (t.joinable()) t.join();
+
     if (m_db.isOpen()) {
         m_db.close();
         QSqlDatabase::removeDatabase("mfplayer_cache");
@@ -56,92 +61,78 @@ CacheStore::~CacheStore() {
 void CacheStore::init() {
     QDir().mkpath(m_cacheDir);
 
+    // Open main-thread read connection for fast in-memory cache fallback queries
     m_db = QSqlDatabase::addDatabase("QSQLITE", "mfplayer_cache");
     m_db.setConnectOptions("QSQLITE_BUSY_TIMEOUT=5000");
     m_db.setDatabaseName(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
                          + "/mfplayer/cache.db");
     QDir().mkpath(QFileInfo(m_db.databaseName()).absolutePath());
+    if (!m_db.open())
+        qWarning() << "CacheStore: failed to open read database:" << m_db.lastError().text();
 
-    if (!m_db.open()) {
-        qWarning() << "CacheStore: failed to open database:" << m_db.lastError().text();
-        return;
-    }
-    initTables();
-}
-
-void CacheStore::initTables() {
-    QSqlQuery q(m_db);
-    q.exec("CREATE TABLE IF NOT EXISTS items ("
-           "parent_id TEXT, item_id TEXT, type TEXT, name TEXT, year INT, "
-           "overview TEXT, image_url TEXT, image_path TEXT, "
-           "parent_series_id TEXT, index_number INT, child_count INT, "
-           "sort_order INT, fetched_at INTEGER, sort_name TEXT, "
-           "PRIMARY KEY (parent_id, item_id))");
-    // Migration: add sort_name column to existing tables
-    q.exec("SELECT sort_name FROM items LIMIT 0");
-    if (q.lastError().isValid())
-        q.exec("ALTER TABLE items ADD COLUMN sort_name TEXT");
-    q.exec("CREATE TABLE IF NOT EXISTS item_detail ("
-           "item_id TEXT PRIMARY KEY, data TEXT, fetched_at INTEGER)");
-    q.exec("CREATE TABLE IF NOT EXISTS seasons ("
-           "series_id TEXT, season_id TEXT, name TEXT, year INT, "
-           "image_url TEXT, image_path TEXT, index_number INT, "
-           "fetched_at INTEGER, PRIMARY KEY (series_id, season_id))");
-    q.exec("CREATE TABLE IF NOT EXISTS images ("
-           "url_hash TEXT PRIMARY KEY, file_path TEXT, fetched_at INTEGER)");
-    q.exec("CREATE TABLE IF NOT EXISTS episodes ("
-           "series_id TEXT, season_id TEXT, data TEXT, fetched_at INTEGER, "
-           "PRIMARY KEY (series_id, season_id))");
-    q.exec("CREATE TABLE IF NOT EXISTS servers ("
-           "id INTEGER PRIMARY KEY AUTOINCREMENT, server_url TEXT NOT NULL, "
-           "username TEXT NOT NULL, password TEXT NOT NULL, "
-           "token TEXT DEFAULT '', user_id TEXT DEFAULT '', "
-           "is_active INTEGER DEFAULT 0, last_used TEXT)");
-
-    // Indexes for expireCache() performance
-    q.exec("CREATE INDEX IF NOT EXISTS idx_items_fetched ON items(fetched_at)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_detail_fetched ON item_detail(fetched_at)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_seasons_fetched ON seasons(fetched_at)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_images_fetched ON images(fetched_at)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_episodes_fetched ON episodes(fetched_at)");
-
-    // Defer image cache scan so the UI appears first.
-    // resolveImagePath() falls back to SQL while m_imageCache is still empty — safe, just slower.
-    QTimer::singleShot(0, this, &CacheStore::loadImageCache);
-
-    // 3-day expiry — deferred to avoid blocking startup (SQLite DELETEs can
-    // take 10-50ms on large caches). Runs on the next event loop tick.
-    QTimer::singleShot(0, this, &CacheStore::expireCache);
-}
-
-void CacheStore::loadImageCache() {
-    QSqlQuery q(m_db);
-    q.exec("SELECT url_hash, file_path FROM images");
-    QHash<QString, QString> validEntries;
-    QStringList stale;
-    while (q.next()) {
-        QString hash = q.value(0).toString();
-        QString path = q.value(1).toString();
-        if (QFile::exists(path))
-            validEntries.insert(hash, path);
-        else
-            stale.append(hash);
-    }
+    // Run DDL on main thread (fast: CREATE IF NOT EXISTS on existing tables <5ms)
     {
-        QMutexLocker lock(&m_imageCacheMutex);
-        m_imageCache = std::move(validEntries);
+        QSqlQuery q(m_db);
+        q.exec("CREATE TABLE IF NOT EXISTS items ("
+               "parent_id TEXT, item_id TEXT, type TEXT, name TEXT, year INT, "
+               "overview TEXT, image_url TEXT, image_path TEXT, "
+               "parent_series_id TEXT, index_number INT, child_count INT, "
+               "sort_order INT, fetched_at INTEGER, sort_name TEXT, "
+               "PRIMARY KEY (parent_id, item_id))");
+        q.exec("SELECT sort_name FROM items LIMIT 0");
+        if (q.lastError().isValid())
+            q.exec("ALTER TABLE items ADD COLUMN sort_name TEXT");
+        q.exec("CREATE TABLE IF NOT EXISTS item_detail ("
+               "item_id TEXT PRIMARY KEY, data TEXT, fetched_at INTEGER)");
+        q.exec("CREATE TABLE IF NOT EXISTS seasons ("
+               "series_id TEXT, season_id TEXT, name TEXT, year INT, "
+               "image_url TEXT, image_path TEXT, index_number INT, "
+               "fetched_at INTEGER, PRIMARY KEY (series_id, season_id))");
+        q.exec("CREATE TABLE IF NOT EXISTS images ("
+               "url_hash TEXT PRIMARY KEY, file_path TEXT, fetched_at INTEGER)");
+        q.exec("CREATE TABLE IF NOT EXISTS episodes ("
+               "series_id TEXT, season_id TEXT, data TEXT, fetched_at INTEGER, "
+               "PRIMARY KEY (series_id, season_id))");
+        q.exec("CREATE TABLE IF NOT EXISTS servers ("
+               "id INTEGER PRIMARY KEY AUTOINCREMENT, server_url TEXT NOT NULL, "
+               "username TEXT NOT NULL, password TEXT NOT NULL, "
+               "token TEXT DEFAULT '', user_id TEXT DEFAULT '', "
+               "is_active INTEGER DEFAULT 0, last_used TEXT)");
+        q.exec("CREATE INDEX IF NOT EXISTS idx_items_fetched ON items(fetched_at)");
+        q.exec("CREATE INDEX IF NOT EXISTS idx_detail_fetched ON item_detail(fetched_at)");
+        q.exec("CREATE INDEX IF NOT EXISTS idx_seasons_fetched ON seasons(fetched_at)");
+        q.exec("CREATE INDEX IF NOT EXISTS idx_images_fetched ON images(fetched_at)");
+        q.exec("CREATE INDEX IF NOT EXISTS idx_episodes_fetched ON episodes(fetched_at)");
     }
-    if (!stale.isEmpty()) {
-        m_db.transaction();
-        QSqlQuery del(m_db);
-        del.prepare("DELETE FROM images WHERE url_hash = ?");
-        for (const auto &h : stale) {
-            del.addBindValue(h);
-            del.exec();
-            del.finish();
-        }
-        m_db.commit();
-    }
+
+    // Start DBWorker for writes and maintenance on its own thread
+    connectDBWorker();
+    m_dbWorker->start();
+
+    // Defer image cache scan and expiry to next event loop tick so DBWorker
+    // init can complete first (it opens its own connection asynchronously).
+    QTimer::singleShot(0, this, [this]() {
+        // Queue loadImageCache on DBWorker — result delivered via imageCacheLoaded signal
+        QMetaObject::invokeMethod(m_dbWorker, "loadImageCache", Qt::QueuedConnection,
+                                  Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
+        // Queue expireCache on DBWorker (3-day sweep)
+        QMetaObject::invokeMethod(m_dbWorker, "expireCache", Qt::QueuedConnection,
+                                  Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
+    });
+}
+
+void CacheStore::connectDBWorker() {
+    // Image cache loaded from DB — merge into in-memory cache on main thread
+    connect(m_dbWorker, &DBWorker::imageCacheLoaded, this, [this](QHash<QString, QString> entries) {
+for (auto it = entries.begin(); it != entries.end(); ++it)
+            m_imageCache.insert(it.key(), it.value());
+    });
+
+    // Expiry sweep completed — remove expired hashes from in-memory cache
+    connect(m_dbWorker, &DBWorker::expired, this, [this](QStringList hashes) {
+for (const auto &h : hashes)
+            m_imageCache.remove(h);
+    });
 }
 
 bool CacheStore::isFresh(qint64 timestamp) const {
@@ -204,38 +195,27 @@ QJsonArray CacheStore::getItems(const QString &parentId) {
 
 void CacheStore::putItems(const QString &parentId, const QJsonArray &items) {
     qint64 now = QDateTime::currentSecsSinceEpoch();
+    // LRU eviction: keep at most kMaxItemCacheEntries parent folders in memory
+    if (!m_itemsCache.contains(parentId)) {
+        while (m_itemsCacheLru.size() >= kMaxItemCacheEntries) {
+            QString oldest = m_itemsCacheLru.takeFirst();
+            m_itemsCache.remove(oldest);
+            m_itemsCacheTime.remove(oldest);
+        }
+        m_itemsCacheLru.append(parentId);
+    } else {
+        m_itemsCacheLru.move(m_itemsCacheLru.indexOf(parentId),
+                             m_itemsCacheLru.size() - 1);
+    }
     m_itemsCache[parentId] = items;
     m_itemsCacheTime[parentId] = now;
-    // SQL write deferred to event loop idle
+    // Offload SQL write to DBWorker thread — avoids blocking main thread
     uint32_t gen = m_writeGeneration;
-    QTimer::singleShot(0, this, [this, parentId, items, now, gen]() {
-        if (gen != m_writeGeneration) return;
-        QSqlQuery q(m_db);
-        m_db.transaction();
-        q.prepare("INSERT OR REPLACE INTO items "
-                  "(parent_id, item_id, type, name, year, overview, image_url, image_path, "
-                  "parent_series_id, index_number, child_count, sort_order, fetched_at, sort_name) "
-                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-        for (int i = 0; i < items.size(); ++i) {
-            auto obj = items[i].toObject();
-            q.addBindValue(parentId);
-            q.addBindValue(obj["Id"].toString());
-            q.addBindValue(obj["Type"].toString());
-            q.addBindValue(obj["Name"].toString());
-            q.addBindValue(obj["ProductionYear"].toInt());
-            q.addBindValue(obj["Overview"].toString());
-            q.addBindValue(obj["ImageTags"].toObject()["Primary"].toString());
-            q.addBindValue(QString());
-            q.addBindValue(obj["ParentId"].toString());
-            q.addBindValue(obj["IndexNumber"].toInt());
-            q.addBindValue(obj["ChildCount"].toInt());
-            q.addBindValue(i);
-            q.addBindValue(now);
-            q.addBindValue(obj["SortName"].toString());
-            q.exec();
-        }
-        m_db.commit();
-    });
+    QMetaObject::invokeMethod(m_dbWorker, "putItems", Qt::QueuedConnection,
+                              Q_ARG(QString, parentId),
+                              Q_ARG(QJsonArray, items),
+                              Q_ARG(uint32_t, gen),
+                              Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
 }
 
 QJsonObject CacheStore::getItemDetail(const QString &itemId) {
@@ -258,15 +238,11 @@ void CacheStore::putItemDetail(const QString &itemId, const QJsonObject &detail)
     m_detailCache[itemId] = detail;
     auto data = QString::fromUtf8(QJsonDocument(detail).toJson(QJsonDocument::Compact));
     uint32_t gen = m_writeGeneration;
-    QTimer::singleShot(0, this, [this, itemId, data, gen]() {
-        if (gen != m_writeGeneration) return;
-        QSqlQuery q(m_db);
-        q.prepare("INSERT OR REPLACE INTO item_detail (item_id, data, fetched_at) VALUES (?,?,?)");
-        q.addBindValue(itemId);
-        q.addBindValue(data);
-        q.addBindValue(QDateTime::currentSecsSinceEpoch());
-        q.exec();
-    });
+    QMetaObject::invokeMethod(m_dbWorker, "putItemDetail", Qt::QueuedConnection,
+                              Q_ARG(QString, itemId),
+                              Q_ARG(QString, data),
+                              Q_ARG(uint32_t, gen),
+                              Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
 }
 
 QJsonArray CacheStore::getSeasons(const QString &seriesId) {
@@ -304,28 +280,11 @@ QJsonArray CacheStore::getSeasons(const QString &seriesId) {
 void CacheStore::putSeasons(const QString &seriesId, const QJsonArray &seasons) {
     m_seasonsCache[seriesId] = seasons;
     uint32_t gen = m_writeGeneration;
-    QTimer::singleShot(0, this, [this, seriesId, seasons, gen]() {
-        if (gen != m_writeGeneration) return;
-        QSqlQuery q(m_db);
-        m_db.transaction();
-        q.prepare("INSERT OR REPLACE INTO seasons "
-                  "(series_id, season_id, name, year, image_url, image_path, index_number, fetched_at) "
-                  "VALUES (?,?,?,?,?,?,?,?)");
-        qint64 now = QDateTime::currentSecsSinceEpoch();
-        for (const auto &val : seasons) {
-            auto obj = val.toObject();
-            q.addBindValue(seriesId);
-            q.addBindValue(obj["Id"].toString());
-            q.addBindValue(obj["Name"].toString());
-            q.addBindValue(obj["ProductionYear"].toInt());
-            q.addBindValue(obj["ImageTags"].toObject()["Primary"].toString());
-            q.addBindValue(QString());
-            q.addBindValue(obj["IndexNumber"].toInt());
-            q.addBindValue(now);
-            q.exec();
-        }
-        m_db.commit();
-    });
+    QMetaObject::invokeMethod(m_dbWorker, "putSeasons", Qt::QueuedConnection,
+                              Q_ARG(QString, seriesId),
+                              Q_ARG(QJsonArray, seasons),
+                              Q_ARG(uint32_t, gen),
+                              Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
 }
 
 QJsonArray CacheStore::getEpisodes(const QString &seriesId, const QString &seasonId) {
@@ -352,17 +311,12 @@ void CacheStore::putEpisodes(const QString &seriesId, const QString &seasonId,
     m_episodesCache[seriesId + QChar(0) + seasonId] = episodes;
     auto data = QString::fromUtf8(QJsonDocument(episodes).toJson(QJsonDocument::Compact));
     uint32_t gen = m_writeGeneration;
-    QTimer::singleShot(0, this, [this, seriesId, seasonId, data, gen]() {
-        if (gen != m_writeGeneration) return;
-        QSqlQuery q(m_db);
-        q.prepare("INSERT OR REPLACE INTO episodes (series_id, season_id, data, fetched_at) "
-                  "VALUES (?,?,?,?)");
-        q.addBindValue(seriesId);
-        q.addBindValue(seasonId);
-        q.addBindValue(data);
-        q.addBindValue(QDateTime::currentSecsSinceEpoch());
-        q.exec();
-    });
+    QMetaObject::invokeMethod(m_dbWorker, "putEpisodes", Qt::QueuedConnection,
+                              Q_ARG(QString, seriesId),
+                              Q_ARG(QString, seasonId),
+                              Q_ARG(QString, data),
+                              Q_ARG(uint32_t, gen),
+                              Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
 }
 
 QString CacheStore::getImagePath(const QString &url) {
@@ -380,19 +334,14 @@ QString CacheStore::getImagePath(const QString &url) {
 void CacheStore::putImagePath(const QString &url, const QString &localPath) {
     const QString h = hashUrl(url);
     {
-        QMutexLocker lock(&m_imageCacheMutex);
-        m_imageCache[h] = localPath;
+m_imageCache[h] = localPath;
     }
-    uint32_t gen = m_writeGeneration;
-    QTimer::singleShot(0, this, [this, h, localPath, gen]() {
-        if (gen != m_writeGeneration) return;
-        QSqlQuery q(m_db);
-        q.prepare("INSERT OR REPLACE INTO images (url_hash, file_path, fetched_at) VALUES (?,?,?)");
-        q.addBindValue(h);
-        q.addBindValue(localPath);
-        q.addBindValue(QDateTime::currentSecsSinceEpoch());
-        q.exec();
-    });
+    // SQL write goes to DBWorker — no main-thread blocking
+    QMetaObject::invokeMethod(m_dbWorker, "putImagePath", Qt::QueuedConnection,
+                              Q_ARG(QString, h),
+                              Q_ARG(QString, localPath),
+                              Q_ARG(uint32_t, m_writeGeneration),
+                              Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
 }
 
 QString CacheStore::imageSavePath(const QString &url) const {
@@ -400,13 +349,11 @@ QString CacheStore::imageSavePath(const QString &url) const {
 }
 
 QString CacheStore::resolveImagePath(const QString &urlHash) const {
-    QMutexLocker lock(&m_imageCacheMutex);
+    // Trust the in-memory cache — files were verified at loadImageCache() time.
+    // All accesses are on the main thread, no mutex needed.
     auto it = m_imageCache.constFind(urlHash);
-    if (it != m_imageCache.constEnd()) {
-        const QString &path = it.value();
-        if (QFile::exists(path) && QFileInfo(path).size() > 0)
-            return path;
-    }
+    if (it != m_imageCache.constEnd())
+        return it.value();
     return {};
 }
 
@@ -418,8 +365,7 @@ QString CacheStore::cachedImageUrl(const QString &url) {
     // Worst case if the file was deleted externally: Image shows nothing, next
     // scroll cycle re-downloads. acceptably rare (only affects expireCache races).
     {
-        QMutexLocker lock(&m_imageCacheMutex);
-        auto it = m_imageCache.constFind(hashKey);
+auto it = m_imageCache.constFind(hashKey);
         if (it != m_imageCache.constEnd())
             return QUrl::fromLocalFile(it.value()).toString();
     }
@@ -434,76 +380,37 @@ QString CacheStore::cachedImageUrl(const QString &url) {
             q.exec();
             return {};
         }
-        QMutexLocker lock(&m_imageCacheMutex);
-        m_imageCache[hashKey] = path;
+m_imageCache[hashKey] = path;
         return QUrl::fromLocalFile(path).toString();
     }
     return {};
 }
 
 void CacheStore::clearContentCache() {
-    ++m_writeGeneration;  // cancel pending deferred writes
+    ++m_writeGeneration;  // cancel pending writes queued to DBWorker
     m_itemsCache.clear();
     m_itemsCacheTime.clear();
+    m_itemsCacheLru.clear();
     m_detailCache.clear();
     m_seasonsCache.clear();
     m_episodesCache.clear();
 
-    // SQL DELETE on background thread with its own connection
-    if (m_clearThread.joinable())
-        m_clearThread.join();
-    QString dbName = m_db.databaseName();
-    m_clearThread = std::thread([dbName]() {
-        {
-            QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "mfplayer_clear");
-            db.setDatabaseName(dbName);
-            db.setConnectOptions("QSQLITE_BUSY_TIMEOUT=5000");
-            if (!db.open()) {
-                QSqlDatabase::removeDatabase("mfplayer_clear");
-                return;
-            }
-            db.transaction();
-            QSqlQuery q(db);
-            q.exec("DELETE FROM items");
-            q.exec("DELETE FROM item_detail");
-            q.exec("DELETE FROM seasons");
-            q.exec("DELETE FROM episodes");
-            db.commit();
-        }
-        QSqlDatabase::removeDatabase("mfplayer_clear");
-    });
+    // SQL DELETE on DBWorker thread — no main-thread blocking
+    QMetaObject::invokeMethod(m_dbWorker, "clearContentCache", Qt::QueuedConnection,
+                              Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
 }
 
 void CacheStore::clearImageCache() {
-    ++m_writeGeneration;  // cancel pending putImagePath deferred writes
+    ++m_writeGeneration;  // cancel pending writes queued to DBWorker
     {
-        QMutexLocker lock(&m_imageCacheMutex);
-        m_imageCache.clear();
+m_imageCache.clear();
         m_pendingDownloads.clear();
     }
 
-    // SQL DELETE + recursive dir removal on background thread
-    if (m_clearThread.joinable())
-        m_clearThread.join();
-    QString dbName = m_db.databaseName();
-    QString cacheDir = m_cacheDir;
-    m_clearThread = std::thread([dbName, cacheDir]() {
-        {
-            QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "mfplayer_clear_img");
-            db.setDatabaseName(dbName);
-            db.setConnectOptions("QSQLITE_BUSY_TIMEOUT=5000");
-            if (db.open()) {
-                QSqlQuery q(db);
-                q.exec("DELETE FROM images");
-            }
-            db.close();
-        }
-        QSqlDatabase::removeDatabase("mfplayer_clear_img");
-
-        QDir dir(cacheDir);
-        dir.removeRecursively();
-        dir.mkpath(cacheDir);
-    });
+    // SQL DELETE + recursive dir removal on DBWorker thread — no main-thread blocking
+    QMetaObject::invokeMethod(m_dbWorker, "clearImageCache", Qt::QueuedConnection,
+                              Q_ARG(QString, m_cacheDir),
+                              Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
 }
 
 void CacheStore::updateItemFieldInCache(const QString &itemId, const QString &fieldName, const QVariant &value) {
@@ -524,7 +431,7 @@ void CacheStore::updateItemFieldInCache(const QString &itemId, const QString &fi
             }
             obj["UserData"] = ud;
             items[i] = obj;
-            break;
+            return;  // item updated — stop scanning (was missing outer break, bug)
         }
     }
 }
@@ -535,66 +442,10 @@ void CacheStore::clearAll() {
 }
 
 void CacheStore::expireCache() {
-    // Run on a background thread with its own SQLite connection to avoid
-    // blocking the GUI thread during the startup sweep.
-    if (m_expireThread.joinable()) {
-        // Previous sweep still running — skip, it covers the same work.
-        return;
-    }
-    QString dbName = m_db.databaseName();
-    QPointer<CacheStore> safeThis(this);
-    m_expireThread = std::thread([dbName, safeThis]() {
-        QStringList expiredHashes;
-        {
-            QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "mfplayer_expire");
-            db.setDatabaseName(dbName);
-            db.setConnectOptions("QSQLITE_BUSY_TIMEOUT=5000");
-            if (!db.open()) {
-                QSqlDatabase::removeDatabase("mfplayer_expire");
-                return;
-            }
-
-            qint64 cutoff = QDateTime::currentSecsSinceEpoch() - Constants::kCacheExpirySeconds;
-
-            {
-                QSqlQuery q(db);
-
-                // Collect expired image hashes and delete files on disk
-                q.prepare("SELECT url_hash, file_path FROM images WHERE fetched_at < ?");
-                q.addBindValue(cutoff);
-                q.exec();
-                while (q.next()) {
-                    expiredHashes.append(q.value(0).toString());
-                    QString path = q.value(1).toString();
-                    if (!path.isEmpty()) QFile::remove(path);
-                }
-
-                db.transaction();
-                q.prepare("DELETE FROM items WHERE fetched_at < ?");
-                q.addBindValue(cutoff); q.exec();
-                q.prepare("DELETE FROM item_detail WHERE fetched_at < ?");
-                q.addBindValue(cutoff); q.exec();
-                q.prepare("DELETE FROM seasons WHERE fetched_at < ?");
-                q.addBindValue(cutoff); q.exec();
-                q.prepare("DELETE FROM images WHERE fetched_at < ?");
-                q.addBindValue(cutoff); q.exec();
-                q.prepare("DELETE FROM episodes WHERE fetched_at < ?");
-                q.addBindValue(cutoff); q.exec();
-                db.commit();
-            }  // QSqlQuery destroyed
-        }  // QSqlDatabase destroyed (calls close() in destructor)
-        QSqlDatabase::removeDatabase("mfplayer_expire");
-
-        // Remove expired entries from the in-memory cache on the main thread
-        if (!expiredHashes.isEmpty()) {
-            QMetaObject::invokeMethod(safeThis, [safeThis, expiredHashes]() {
-                if (!safeThis) return;
-                QMutexLocker lock(&safeThis->m_imageCacheMutex);
-                for (const auto &h : expiredHashes)
-                    safeThis->m_imageCache.remove(h);
-            });
-        }
-    });
+    // Offload to DBWorker — runs on its own thread, no main-thread blocking.
+    // DBWorker serializes all access so no need for duplicate-prevention guard.
+    QMetaObject::invokeMethod(m_dbWorker, "expireCache", Qt::QueuedConnection,
+                              Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
 }
 
 void CacheStore::fetchImage(const QString &url) {
@@ -602,18 +453,15 @@ void CacheStore::fetchImage(const QString &url) {
         return;
 
     QString hash = hashUrl(url);
-    // Fast memory lookup + duplicate download prevention
+    // Fast memory lookup + duplicate download prevention.
+    // Trust the in-memory cache — files were verified at loadImageCache() time.
+    // If the file was deleted externally (extremely rare), the Image simply won't
+    // render and the next scroll cycle will re-download.
     {
-        QMutexLocker lock(&m_imageCacheMutex);
-        auto it = m_imageCache.find(hash);
+auto it = m_imageCache.find(hash);
         if (it != m_imageCache.end()) {
-            QString path = it.value();
-            if (QFile::exists(path)) {
-                emit imageReady(url, QUrl::fromLocalFile(path).toString());
-                return;
-            }
-            // File disappeared — remove from cache and re-download
-            m_imageCache.erase(it);
+            emit imageReady(url, QUrl::fromLocalFile(it.value()).toString());
+            return;
         }
         // Prevent duplicate concurrent downloads of the same URL
         if (m_pendingDownloads.contains(hash)) return;
@@ -645,10 +493,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
 
         auto done = [safeThis, url]() {
             if (!safeThis) return;
-            {
-                QMutexLocker lock(&safeThis->m_imageCacheMutex);
-                safeThis->m_pendingDownloads.remove(hashUrl(url));
-            }
+            safeThis->m_pendingDownloads.remove(hashUrl(url));
             safeThis->m_activeDownloads--;
             safeThis->processDownloadQueue();
         };
@@ -758,11 +603,8 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
                 done();
             });
         });
-        // Track thread for clean shutdown. Worker runs ~2ms (image validation + write),
-        // so accumulation is negligible. Destructor joins all.
-        {
-            std::lock_guard<std::mutex> wlock(safeThis->m_workerMutex);
-            safeThis->m_workerThreads.push_back(std::move(worker));
-        }
+        // Track thread for clean shutdown. Worker runs ~2ms (image validation + write).
+        // Worker threads are only touched from the main thread, so no mutex needed.
+        safeThis->m_workerThreads.push_back(std::move(worker));
     }, 15);
 }

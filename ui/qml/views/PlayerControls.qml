@@ -100,9 +100,9 @@ Rectangle {
                     if (sec !== progressSlider._lastSecond) {
                         progressSlider._lastSecond = sec
                         progressSlider._cachedTime = formatTime(Playback.position) + " / " + formatTime(Playback.duration)
+                        if (!progressSlider.pressed)
+                            progressSlider.value = Playback.position
                     }
-                    if (!progressSlider.pressed)
-                        progressSlider.value = Playback.position
                 }
                 function onDurationChanged() {
                     progressSlider._cachedTime = formatTime(Playback.position) + " / " + formatTime(Playback.duration)

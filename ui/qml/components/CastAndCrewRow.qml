@@ -14,9 +14,12 @@ Column {
         var filtered = []
         for (var i = 0; i < p.length; i++) {
             var t = p[i].Type || ""
-            if (t === "Actor" || t === "Director") filtered.push(p[i])
+            if (t === "Actor" || t === "Director") {
+                filtered.push(p[i])
+                if (filtered.length >= 20) break
+            }
         }
-        return filtered.slice(0, 20)
+        return filtered
     }
 
     width: parent.width

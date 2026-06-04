@@ -30,7 +30,8 @@ public:
 
 private:
     void process();
-    mutable QMutex m_pixmapMutex;  // protects m_pixmap between process() and textureFactory()
+    // m_pixmap ordering: set in process() before finished() emitted → Qt only
+    // calls textureFactory() after finished() → write happens-before read. No mutex needed.
     QString m_path;
     QSize m_requestedSize;
     QMutex *m_cacheMutex;
@@ -48,9 +49,6 @@ public:
     // Async path — called when QML Image has asynchronous: true
     QQuickImageResponse *requestImageResponse(const QString &id, const QSize &requestedSize) override;
 
-    // Sync fallback — called when QML Image has asynchronous: false (e.g. logo)
-    QPixmap requestPixmap(const QString &id, QSize *size, const QSize &requestedSize) override;
-
 private:
     friend class ImageCacheResponse;
     using CacheEntry = ImageCacheResponse::CacheEntry;
@@ -58,5 +56,5 @@ private:
     mutable QMutex m_mutex;
     std::unordered_map<QString, CacheEntry> m_memCache;  // O(1) lookup
     std::list<QString> m_lru;                              // front = most recent, O(1) splice
-    static const int kMaxEntries = 500;
+    static const int kMaxEntries = 200;
 };

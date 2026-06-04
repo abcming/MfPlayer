@@ -322,12 +322,12 @@ void MpvController::updateHdrDisplayActive(bool active) {
 
     if (active) {
         // HDR display: output PQ into BT.2020 container
-        mpv_set_option_string(m_mpv, "target-trc", "pq");
-        mpv_set_option_string(m_mpv, "target-prim", "bt.2020");
+        mpv_set_property_string(m_mpv, "target-trc", "pq");
+        mpv_set_property_string(m_mpv, "target-prim", "bt.2020");
     } else {
         // SDR display: output sRGB into BT.709 — matches the 8-bit SDR swapchain
-        mpv_set_option_string(m_mpv, "target-trc", "srgb");
-        mpv_set_option_string(m_mpv, "target-prim", "bt.709");
+        mpv_set_property_string(m_mpv, "target-trc", "srgb");
+        mpv_set_property_string(m_mpv, "target-prim", "bt.709");
     }
     // target-peak is managed separately via setTargetPeak / settings store.
     // When SDR, the srgb transfer function makes peak irrelevant.
@@ -447,7 +447,8 @@ void MpvController::addSubtitleFile(const QString &url,
 
 void MpvController::toggleStats() {
     if (!m_mpv) return;
-    mpv_command_string(m_mpv, "script-binding stats/display-stats-toggle");
+    const char *args[] = {"script-binding", "stats/display-stats-toggle", nullptr};
+    mpv_command_async(m_mpv, 0, args);
 }
 
 void MpvController::observeStatsProperties(bool observe) {

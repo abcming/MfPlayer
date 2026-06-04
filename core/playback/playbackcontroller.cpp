@@ -1,5 +1,6 @@
 #include "core/playback/playbackcontroller.h"
 #include "common/constants.h"
+#include "core/io_pool.h"
 #include <QDir>
 #include <QFileInfo>
 #include <QQuickWindow>
@@ -131,12 +132,20 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
     m_pendingSubIdx = subtitleIndex;
 
     m_emby->fetchPlaybackInfo(itemId,
-        [this, itemId, startTimeTicks, gen, audioIndex, subtitleIndex](const QString &streamUrl, const QString &playSessionId) {
+        [this, itemId, startTimeTicks, gen, audioIndex, subtitleIndex]
+        (const QString &streamUrl, const QString &playSessionId, const QJsonArray &mediaSources) {
         if (gen != m_playGeneration) return;
         if (streamUrl.isEmpty()) {
             m_currentPlayItemId.clear();
             emit playError("无法获取播放地址或解析重定向失败");
             return;
+        }
+        // Populate MediaSources from fresh PlaybackInfo response so the
+        // PlayerPage version selector works even when itemData was not
+        // pre-cached (e.g. episodes played from a series page).
+        if (!mediaSources.isEmpty()) {
+            m_currentItemDetail["MediaSources"] = mediaSources;
+            emit currentItemDetailChanged();
         }
         m_currentPlaySessionId = playSessionId;
         m_emby->reportPlaybackStart(itemId, startTimeTicks, playSessionId, m_currentMediaSourceId,
@@ -291,41 +300,48 @@ QJsonArray PlaybackController::streamsForSelectedSource() const {
     return item["MediaStreams"].toArray();
 }
 
-QVariantList PlaybackController::scanFolderForLocalPlaylist(const QString &filePath) const {
-    QFileInfo fi(filePath);
-    QDir dir = fi.absoluteDir();
+void PlaybackController::scanFolderForLocalPlaylistAsync(const QString &filePath) {
+    // Offload filesystem enumeration to the I/O pool to avoid blocking UI thread.
+    QPointer<PlaybackController> guard(this);
+    ioPool().start([this, guard, filePath]() {
+        QFileInfo fi(filePath);
+        QDir dir = fi.absoluteDir();
 
-    // Canonical path for robust matching (resolves symlinks, normalizes separators)
-    QString inputCanonical = fi.canonicalFilePath();
-    if (inputCanonical.isEmpty())
-        inputCanonical = fi.absoluteFilePath();
+        QString inputCanonical = fi.canonicalFilePath();
+        if (inputCanonical.isEmpty())
+            inputCanonical = fi.absoluteFilePath();
 
-    QStringList videoFilters = {
-        "*.mp4", "*.mkv", "*.avi", "*.mov", "*.wmv", "*.flv",
-        "*.webm", "*.mpg", "*.mpeg", "*.m2ts", "*.ts", "*.m4v",
-        "*.3gp", "*.ogv"
-    };
-    dir.setNameFilters(videoFilters);
-    dir.setSorting(QDir::Name | QDir::LocaleAware);
-    QFileInfoList files = dir.entryInfoList(QDir::Files);
+        QStringList videoFilters = {
+            "*.mp4", "*.mkv", "*.avi", "*.mov", "*.wmv", "*.flv",
+            "*.webm", "*.mpg", "*.mpeg", "*.m2ts", "*.ts", "*.m4v",
+            "*.3gp", "*.ogv"
+        };
+        dir.setNameFilters(videoFilters);
+        dir.setSorting(QDir::Name | QDir::LocaleAware);
+        QFileInfoList files = dir.entryInfoList(QDir::Files);
 
-    QVariantList playlist;
-    for (int i = 0; i < files.size(); ++i) {
-        QVariantMap item;
-        item["localFile"] = files[i].absoluteFilePath();
-        item["itemName"] = files[i].fileName();
-        item["indexNumber"] = i + 1;
+        QVariantList playlist;
+        for (int i = 0; i < files.size(); ++i) {
+            QVariantMap item;
+            item["localFile"] = files[i].absoluteFilePath();
+            item["itemName"] = files[i].fileName();
+            item["indexNumber"] = i + 1;
 
-        // Mark the entry that matches the file we're about to play
-        QString fCanonical = files[i].canonicalFilePath();
-        if (fCanonical.isEmpty())
-            fCanonical = files[i].absoluteFilePath();
-        if (fCanonical == inputCanonical)
-            item["isCurrent"] = true;
+            QString fCanonical = files[i].canonicalFilePath();
+            if (fCanonical.isEmpty())
+                fCanonical = files[i].absoluteFilePath();
+            if (fCanonical == inputCanonical)
+                item["isCurrent"] = true;
 
-        playlist.append(item);
-    }
-    return playlist;
+            playlist.append(item);
+        }
+
+        // Deliver result back to main thread
+        QMetaObject::invokeMethod(this, [this, guard, playlist]() {
+            if (!guard) return;
+            emit localPlaylistReady(playlist);
+        }, Qt::QueuedConnection);
+    });
 }
 
 // ── Jaro-Winkler fuzzy string matching ──
@@ -374,54 +390,56 @@ double PlaybackController::jaroWinkler(const QString &a, const QString &b) {
 }
 
 // ── ISO 639 code → human-readable language name ──
+static const QHash<QString, QString> &langMap() {
+    static const QHash<QString, QString> m = {
+        {"chs","Chinese Simplified"}, {"zho","Chinese Simplified"},
+        {"zh","Chinese Simplified"},  {"zh-cn","Chinese Simplified"},
+        {"zh-hans","Chinese Simplified"},
+        {"cht","Chinese Traditional"}, {"zh-tw","Chinese Traditional"},
+        {"zh-hant","Chinese Traditional"},
+        {"chi","Chinese"},
+        {"eng","English"}, {"en","English"},
+        {"jpn","Japanese"}, {"ja","Japanese"},
+        {"kor","Korean"}, {"ko","Korean"},
+        {"fre","French"}, {"fra","French"}, {"fr","French"},
+        {"ger","German"}, {"deu","German"}, {"de","German"},
+        {"spa","Spanish"}, {"es","Spanish"},
+        {"ita","Italian"}, {"it","Italian"},
+        {"por","Portuguese"}, {"pt","Portuguese"},
+        {"rus","Russian"}, {"ru","Russian"},
+        {"ara","Arabic"}, {"ar","Arabic"},
+        {"nob","Norwegian"}, {"nor","Norwegian"}, {"no","Norwegian"},
+        {"swe","Swedish"}, {"sv","Swedish"},
+        {"dan","Danish"}, {"da","Danish"},
+        {"fin","Finnish"}, {"fi","Finnish"},
+        {"dut","Dutch"}, {"nld","Dutch"}, {"nl","Dutch"},
+        {"pol","Polish"}, {"pl","Polish"},
+        {"tur","Turkish"}, {"tr","Turkish"},
+        {"hin","Hindi"}, {"hi","Hindi"},
+        {"tha","Thai"}, {"th","Thai"},
+        {"vie","Vietnamese"}, {"vi","Vietnamese"},
+        {"ind","Indonesian"}, {"id","Indonesian"},
+        {"may","Malay"}, {"msa","Malay"}, {"ms","Malay"},
+        {"cze","Czech"}, {"ces","Czech"}, {"cs","Czech"},
+        {"rum","Romanian"}, {"ron","Romanian"}, {"ro","Romanian"},
+        {"hun","Hungarian"}, {"hu","Hungarian"},
+        {"ukr","Ukrainian"}, {"uk","Ukrainian"},
+        {"bul","Bulgarian"}, {"bg","Bulgarian"},
+        {"gre","Greek"}, {"ell","Greek"}, {"el","Greek"},
+        {"heb","Hebrew"}, {"he","Hebrew"},
+        {"cat","Catalan"}, {"ca","Catalan"},
+    };
+    return m;
+}
+
 QString PlaybackController::langCodeToName(const QString &code) {
     QString c = code.trimmed().toLower();
     if (c.isEmpty()) return {};
-
-    // Matroska / Emby variant codes
-    if (c == "chs" || c == "zho" || c == "zh" || c == "zh-cn" || c == "zh-hans")
-        return "Chinese Simplified";
-    if (c == "cht" || c == "zh-tw" || c == "zh-hant")
-        return "Chinese Traditional";
-    if (c == "chi")
-        return "Chinese";   // generic / Traditional (639-2/B)
-
-    if (c == "eng" || c == "en")       return "English";
-    if (c == "jpn" || c == "ja")       return "Japanese";
-    if (c == "kor" || c == "ko")       return "Korean";
-    if (c == "fre" || c == "fra" || c == "fr") return "French";
-    if (c == "ger" || c == "deu" || c == "de") return "German";
-    if (c == "spa" || c == "es")       return "Spanish";
-    if (c == "ita" || c == "it")       return "Italian";
-    if (c == "por" || c == "pt")       return "Portuguese";
-    if (c == "rus" || c == "ru")       return "Russian";
-    if (c == "ara" || c == "ar")       return "Arabic";
-    if (c == "nob" || c == "nor" || c == "no") return "Norwegian";
-    if (c == "swe" || c == "sv")       return "Swedish";
-    if (c == "dan" || c == "da")       return "Danish";
-    if (c == "fin" || c == "fi")       return "Finnish";
-    if (c == "dut" || c == "nld" || c == "nl") return "Dutch";
-    if (c == "pol" || c == "pl")       return "Polish";
-    if (c == "tur" || c == "tr")       return "Turkish";
-    if (c == "hin" || c == "hi")       return "Hindi";
-    if (c == "tha" || c == "th")       return "Thai";
-    if (c == "vie" || c == "vi")       return "Vietnamese";
-    if (c == "ind" || c == "id")       return "Indonesian";
-    if (c == "may" || c == "msa" || c == "ms") return "Malay";
-    if (c == "cze" || c == "ces" || c == "cs") return "Czech";
-    if (c == "rum" || c == "ron" || c == "ro") return "Romanian";
-    if (c == "hun" || c == "hu")       return "Hungarian";
-    if (c == "ukr" || c == "uk")       return "Ukrainian";
-    if (c == "bul" || c == "bg")       return "Bulgarian";
-    if (c == "gre" || c == "ell" || c == "el") return "Greek";
-    if (c == "heb" || c == "he")       return "Hebrew";
-    if (c == "cat" || c == "ca")       return "Catalan";
-
+    if (auto it = langMap().find(c); it != langMap().end())
+        return it.value();
     // Already a human-readable name (longer than a code) — capitalize and return
-    if (c.length() > 3) {
-        c = c.left(1).toUpper() + c.mid(1);
-        return c;
-    }
+    if (c.length() > 3)
+        return c.left(1).toUpper() + c.mid(1);
     return c;  // unknown short code
 }
 

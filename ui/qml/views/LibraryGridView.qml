@@ -80,28 +80,21 @@ GridView {
         property int _lastRowCount: 0
 
         function buildAlphaMap() {
-            alphaMap = Library.contentModel.buildAlphaIndex()
+            // Incrementally maintained on the C++ side — just read the property.
+            alphaMap = Library.contentModel.alphaIndex
             _lastRowCount = Library.contentModel.rowCount()
         }
 
         function extendAlphaMap() {
-            let map = alphaMap
-            let count = Library.contentModel.rowCount()
-            for (let i = _lastRowCount; i < count; ++i) {
-                let item = Library.contentModel.get(i)
-                let name = item.sortName || item.itemName || ""
-                if (!name) continue
-                let ch = name[0].toUpperCase()
-                if (ch < "A" || ch > "Z") ch = "#"
-                if (map[ch] === undefined) map[ch] = i
-            }
-            alphaMap = map
-            _lastRowCount = count
+            // C++ MediaModel maintains alphaIndex incrementally in appendItems().
+            // Just sync the latest value.
+            alphaMap = Library.contentModel.alphaIndex
+            _lastRowCount = Library.contentModel.rowCount()
         }
 
         Connections {
             target: Library.contentModel
-            function onRowsInserted() { letterIndex.extendAlphaMap() }
+            function onAlphaIndexChanged() { letterIndex.extendAlphaMap() }
             function onModelReset() { letterIndex.buildAlphaMap() }
         }
 
@@ -321,13 +314,18 @@ GridView {
             id: cardLoader
             anchors.fill: parent
             sourceComponent: grid.landscapeMode ? landscapeCard : portraitCard
-            Binding { target: cardLoader.item; property: "imageUrl";    value: imageUrl    }
-            Binding { target: cardLoader.item; property: "itemName";    value: itemName    }
-            Binding { target: cardLoader.item; property: "year";        value: year        }
-            Binding { target: cardLoader.item; property: "itemId";      value: itemId      }
-            Binding { target: cardLoader.item; property: "isFavorite";  value: isFavorite  }
-            Binding { target: cardLoader.item; property: "played";      value: played      }
-            Binding { target: cardLoader.item; property: "seriesName";  value: seriesName  }
+            onItemChanged: {
+                if (!cardLoader.item) return
+                // Direct assignment for static properties (set once, never change).
+                // Only isFavorite + played use Binding for live model-update reactivity.
+                cardLoader.item.imageUrl = imageUrl
+                cardLoader.item.itemName = itemName
+                cardLoader.item.year = year
+                cardLoader.item.itemId = itemId
+                cardLoader.item.seriesName = seriesName
+            }
+            Binding { target: cardLoader.item; property: "isFavorite"; value: isFavorite }
+            Binding { target: cardLoader.item; property: "played";     value: played     }
         }
     }
 }

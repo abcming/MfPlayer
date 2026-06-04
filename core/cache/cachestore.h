@@ -3,15 +3,14 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSqlDatabase>
-#include <QMutex>
 #include <QSet>
 #include <memory>
 #include <thread>
 #include <vector>
-#include <mutex>
 #include <atomic>
 
 class CurlEngine;
+class DBWorker;
 
 class CacheStore : public QObject {
     Q_OBJECT
@@ -55,30 +54,29 @@ signals:
     void imageReady(const QString &url, const QString &localPath);
 
 private:
-    void initTables();
-    void loadImageCache();
+    void connectDBWorker();
     bool isFresh(qint64 timestamp) const;
     void doFetchImage(const QString &url, int retries);
     void processDownloadQueue();
 
-    QSqlDatabase m_db;
+    QSqlDatabase m_db;  // main-thread read connection
+    DBWorker *m_dbWorker = nullptr;
     std::unique_ptr<CurlEngine> m_curl;
     QString m_cacheDir;
-    mutable QMutex m_imageCacheMutex;
-    QHash<QString, QString> m_imageCache;       // url → filePath
-    QSet<QString> m_pendingDownloads;            // hashes of in-flight downloads
-    QHash<QString, QJsonArray> m_itemsCache;     // parentId → items
+    // All accessed exclusively on the main thread — no mutex needed.
+    QHash<QString, QString> m_imageCache;       // urlHash → filePath
+    QHash<QString, QJsonArray> m_itemsCache;     // parentId → items (LRU bounded)
     QHash<QString, qint64> m_itemsCacheTime;     // parentId → fetched_at
+    QList<QString> m_itemsCacheLru;              // LRU order for m_itemsCache
+    static const int kMaxItemCacheEntries = 200;
     QHash<QString, QJsonObject> m_detailCache;   // itemId → detail JSON
     QHash<QString, QJsonArray> m_seasonsCache;   // seriesId → seasons
     QHash<QString, QJsonArray> m_episodesCache;  // "seriesId\0seasonId" → episodes
+    QSet<QString> m_pendingDownloads;            // hashes of in-flight downloads
     int m_activeDownloads = 0;
     QList<QPair<QString, int>> m_downloadQueue;
     static const int kMaxActiveDownloads = 8;
     uint32_t m_writeGeneration = 0;  // incremented by clearContentCache to cancel deferred writes
-    std::thread m_expireThread;
-    std::thread m_clearThread;
-    std::vector<std::thread> m_workerThreads;  // image validation+write threads
-    std::mutex m_workerMutex;                  // protects m_workerThreads
-    std::atomic<bool> m_stopFlag{false};       // set in dtor; check in future worker loops
+    std::vector<std::thread> m_workerThreads;  // image download validation+write
+    std::atomic<bool> m_stopFlag{false};
 };

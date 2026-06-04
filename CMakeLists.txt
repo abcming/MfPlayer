@@ -62,6 +62,7 @@ qt_add_executable(mfplayer_app
     core/server/servermanager.cpp
     core/server/credentialstore.cpp
     core/cache/cachestore.cpp
+    core/cache/dbworker.cpp
     core/cache/imagecacheprovider.cpp
     core/network/curlengine.cpp
 )
@@ -206,7 +207,7 @@ endif()
 
 set_target_properties(mfplayer_app PROPERTIES
     OUTPUT_NAME "MfPlayer"
-    # WIN32_EXECUTABLE TRUE
+    WIN32_EXECUTABLE TRUE
 )
 
 add_custom_command(TARGET mfplayer_app POST_BUILD

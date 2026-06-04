@@ -16,6 +16,7 @@ struct mpv_vulkan_fbo { void *image; int format, usage; int w, h; };
 }
 
 #include <QOpenGLContext>
+#include <QOpenGLFunctions>
 #include <QOpenGLExtraFunctions>
 #include <QQuickWindow>
 #include <QMutex>
@@ -47,10 +48,19 @@ struct VideoRenderState {
     bool fboReady = false;
     QSize nodeSize;
     MpvRenderItem *item = nullptr;
+    // OpenGL cached offscreen FBO (avoids per-frame gen/delete, see #2)
+    GLuint offFbo = 0;
+    GLuint offTex = 0;
+    QSize offFboSize;
 };
 
 QHash<VideoRenderNode *, VideoRenderState> s_state;
 QMutex s_stateMutex;
+
+// Frame-skip tracking for pause/idle optimization
+// Keyed by render node; maps to {lastRenderedSize, consecutiveStaleFrames}
+QHash<const VideoRenderNode *, QPair<QSize, int>> s_renderSkip;
+QMutex s_renderSkipMutex;
 } // anonymous namespace
 
 QMutex &VideoRenderNode::renderMutex() { return s_renderMutex; }
@@ -106,6 +116,19 @@ void VideoRenderNode::render(const RenderState *state) {
     }
 
     if (!st.renderCtx || !st.hasVideo) return;
+
+    // Frame-skip: if geometry unchanged for 3+ frames, mpv is paused/idle.
+    // Skip the GPU render call to save power and reduce render-thread wakeups.
+    {
+        QMutexLocker skipLock(&s_renderSkipMutex);
+        auto &entry = s_renderSkip[this];
+        if (st.nodeSize == entry.first && entry.second >= 3) {
+            entry.second++;
+            return;
+        }
+        entry.first = st.nodeSize;
+        entry.second++;
+    }
 
     auto *win = st.item ? st.item->window() : nullptr;
     if (!win) return;
@@ -175,6 +198,7 @@ void VideoRenderNode::render(const RenderState *state) {
         };
         mpv_render_context_render(st.renderCtx, params);
         mpv_render_context_report_swap(st.renderCtx);
+        { QMutexLocker l(&s_renderSkipMutex); s_renderSkip[this].second = 0; }
 
         win->endExternalCommands();
         return;
@@ -217,6 +241,7 @@ void VideoRenderNode::render(const RenderState *state) {
         };
         mpv_render_context_render(st.renderCtx, params);
         mpv_render_context_report_swap(st.renderCtx);
+        { QMutexLocker l(&s_renderSkipMutex); s_renderSkip[this].second = 0; }
 
         rtv->Release();
         res->Release();
@@ -230,8 +255,9 @@ void VideoRenderNode::render(const RenderState *state) {
     //
     // gpu-next ignores MPV_RENDER_PARAM_FLIP_Y (documented as unsupported),
     // so video comes out upside-down when rendering directly to Qt's FBO.
-    // Workaround: render mpv to a temporary offscreen FBO, then glBlitFramebuffer
-    // with swapped Y to the draw FBO — a pure-GPU copy, effectively zero cost.
+    // Workaround: render mpv to an offscreen FBO, then glBlitFramebuffer
+    // with swapped Y to the draw FBO. FBO+texture cached across frames — only
+    // recreated when node size changes (e.g. resize / HDR toggle).
     {
         win->beginExternalCommands();
 
@@ -248,23 +274,32 @@ void VideoRenderNode::render(const RenderState *state) {
         const int w = st.nodeSize.width();
         const int h = st.nodeSize.height();
 
-        // Create temporary offscreen FBO + texture for mpv
-        GLuint offFbo = 0, offTex = 0;
-        f->glGenFramebuffers(1, &offFbo);
-        f->glGenTextures(1, &offTex);
-        f->glBindTexture(GL_TEXTURE_2D, offTex);
-        f->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
-                        GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        f->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        f->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        f->glBindFramebuffer(GL_FRAMEBUFFER, offFbo);
-        f->glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                  GL_TEXTURE_2D, offTex, 0);
+        // Cache offscreen FBO — only recreate when size changes
+        if (st.offFboSize != st.nodeSize) {
+            if (st.offFbo)  f->glDeleteFramebuffers(1, &st.offFbo);
+            if (st.offTex)  f->glDeleteTextures(1, &st.offTex);
+            f->glGenFramebuffers(1, &st.offFbo);
+            f->glGenTextures(1, &st.offTex);
+            f->glBindTexture(GL_TEXTURE_2D, st.offTex);
+            f->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
+                            GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+            f->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            f->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            f->glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                      GL_TEXTURE_2D, st.offTex, 0);
+            // Write back to master state so next frame sees the cached FBO
+            { QMutexLocker l(&s_stateMutex);
+              auto &ms = s_state[this];
+              ms.offFbo = st.offFbo;
+              ms.offTex = st.offTex;
+              ms.offFboSize = st.nodeSize; }
+        }
+        f->glBindFramebuffer(GL_FRAMEBUFFER, st.offFbo);
 
         mpv_render_context_update(st.renderCtx);
 
         mpv_opengl_fbo mpvFbo{
-            static_cast<int>(offFbo), w, h, 0
+            static_cast<int>(st.offFbo), w, h, 0
         };
         int advanced = 1;
         int block = 0;
@@ -276,18 +311,14 @@ void VideoRenderNode::render(const RenderState *state) {
         };
         mpv_render_context_render(st.renderCtx, params);
         mpv_render_context_report_swap(st.renderCtx);
+        { QMutexLocker l(&s_renderSkipMutex); s_renderSkip[this].second = 0; }
 
         // Blit with Y-flip:
-        // src rect (0,0)-(w,h) in offscreen FBO has origin at bottom-left
-        // dst rect (0,h)-(w,0) in draw FBO inverts Y → top-left origin
-        f->glBindFramebuffer(GL_READ_FRAMEBUFFER, offFbo);
+        f->glBindFramebuffer(GL_READ_FRAMEBUFFER, st.offFbo);
         f->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(drawFbo));
         f->glBlitFramebuffer(0, 0, w, h,
                              0, h, w, 0,
                              GL_COLOR_BUFFER_BIT, GL_NEAREST);
-
-        f->glDeleteTextures(1, &offTex);
-        f->glDeleteFramebuffers(1, &offFbo);
 
         win->endExternalCommands();
     }
@@ -295,6 +326,16 @@ void VideoRenderNode::render(const RenderState *state) {
 
 void VideoRenderNode::releaseResources() {
     QMutexLocker lock(&s_stateMutex);
+    auto it = s_state.find(this);
+    if (it != s_state.end()) {
+        if (it->offFbo || it->offTex) {
+            if (auto *ctx = QOpenGLContext::currentContext()) {
+                auto *f = ctx->functions();
+                if (it->offFbo) f->glDeleteFramebuffers(1, &it->offFbo);
+                if (it->offTex) f->glDeleteTextures(1, &it->offTex);
+            }
+        }
+    }
     s_state.remove(this);
 }
 

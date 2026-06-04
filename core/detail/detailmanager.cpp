@@ -4,12 +4,16 @@
 #include <algorithm>
 
 static QJsonArray sortByIndexNumber(QJsonArray arr) {
-    QList<QJsonValue> list(arr.begin(), arr.end());
-    std::sort(list.begin(), list.end(), [](const QJsonValue &a, const QJsonValue &b) {
-        return a.toObject()["IndexNumber"].toInt() < b.toObject()["IndexNumber"].toInt();
-    });
+    // Pre-extract sort keys to avoid toObject() + JSON lookup per comparator call
+    struct Pair { int key; QJsonValue val; };
+    QVector<Pair> pairs;
+    pairs.reserve(arr.size());
+    for (const auto &v : arr)
+        pairs.append({v.toObject()["IndexNumber"].toInt(), v});
+    std::sort(pairs.begin(), pairs.end(),
+              [](const Pair &a, const Pair &b) { return a.key < b.key; });
     QJsonArray result;
-    for (const auto &v : list) result.append(v);
+    for (const auto &p : pairs) result.append(p.val);
     return result;
 }
 

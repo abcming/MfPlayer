@@ -444,7 +444,7 @@ static QJsonObject buildDeviceProfile() {
 }
 
 void EmbyClient::fetchPlaybackInfo(const QString &itemId,
-                                    std::function<void(const QString &, const QString &)> callback,
+                                    std::function<void(const QString &, const QString &, const QJsonArray &)> callback,
                                     const QString &mediaSourceId,
                                     int subtitleStreamIndex) {
     QUrlQuery query;
@@ -473,7 +473,7 @@ void EmbyClient::fetchPlaybackInfo(const QString &itemId,
             streamUrl = sources.first().toObject()["DirectStreamUrl"].toString();
         if (streamUrl.isEmpty())
             qWarning() << "EmbyClient: PlaybackInfo returned no DirectStreamUrl";
-        if (callback) callback(streamUrl, playSessionId);
+        if (callback) callback(streamUrl, playSessionId, sources);
     });
 }
 

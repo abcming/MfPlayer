@@ -6,6 +6,7 @@
 
 class MediaModel : public QAbstractListModel {
     Q_OBJECT
+    Q_PROPERTY(QVariantMap alphaIndex READ alphaIndex NOTIFY alphaIndexChanged FINAL)
 
 public:
     enum Roles {
@@ -39,10 +40,15 @@ public:
     void clear();
 
     Q_INVOKABLE QVariantMap get(int row) const;
-    Q_INVOKABLE QVariantMap buildAlphaIndex() const;
+    Q_INVOKABLE QVariantList getAllItems() const;
+    QVariantMap alphaIndex() const { return m_alphaIndex; }
+    Q_INVOKABLE QVariantMap buildAlphaIndex() const;  // retained for compat
     Q_INVOKABLE void updateItemField(const QString &itemId, int role, const QVariant &value);
     Q_INVOKABLE void updateItemByRoleName(const QString &itemId, const QString &roleName, const QVariant &value);
     Q_INVOKABLE bool removeItem(const QString &itemId);
+
+signals:
+    void alphaIndexChanged();
 
 private:
     struct Item {
@@ -60,6 +66,10 @@ private:
     QList<Item> m_items;
     QHash<QString, int> m_idToIndex;  // O(1) lookup by itemId
     QJsonArray m_lastSourceJson;
+    QVariantMap m_alphaIndex;          // incrementally maintained A-Z→row map
+
+    void rebuildAlphaIndex();
+    void extendAlphaIndex(int fromRow);
 
     static Item fromJson(const QJsonObject &obj);
 };
