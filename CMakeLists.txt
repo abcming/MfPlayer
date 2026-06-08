@@ -132,6 +132,7 @@ qt_add_qml_module(mfplayer_app
         ui/qml/views/PlayerControls.qml
         ui/qml/components/CachedImage.qml
         ui/qml/components/ImageLoadQueue.qml
+        ui/qml/components/SmoothScroller.qml
         ui/qml/components/RoundedImage.qml
         ui/qml/components/TrackSelector.qml
         ui/qml/components/HorizontalMediaRow.qml
@@ -207,7 +208,7 @@ endif()
 
 set_target_properties(mfplayer_app PROPERTIES
     OUTPUT_NAME "MfPlayer"
-    WIN32_EXECUTABLE TRUE
+    WIN32_EXECUTABLE FALSE
 )
 
 add_custom_command(TARGET mfplayer_app POST_BUILD
