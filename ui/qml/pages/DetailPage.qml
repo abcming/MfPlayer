@@ -248,39 +248,14 @@ HdrPqOverlay {
 
     Flickable {
         id: detailFlick
-        property real wheelTarget: 0
         anchors.fill: parent
         anchors.topMargin: 60
         contentHeight: detailCol.implicitHeight + 60
         clip: true
         interactive: false
 
-        WheelHandler {
-            onWheel: (event) => {
-                event.accepted = true
-
-                const maxScroll =
-                    Math.max(0, detailFlick.contentHeight - detailFlick.height)
-
-                if (!detailAnim.running)
-                    detailFlick.wheelTarget = detailFlick.contentY
-
-                detailFlick.wheelTarget -= event.angleDelta.y / 120 * 100
-                detailFlick.wheelTarget = Math.max(0, Math.min(maxScroll, detailFlick.wheelTarget))
-
-                detailAnim.stop()
-                detailAnim.from = detailFlick.contentY
-                detailAnim.to = detailFlick.wheelTarget
-                detailAnim.restart()
-            }
-        }
-
-        NumberAnimation {
-            id: detailAnim
+        SmoothScroller {
             target: detailFlick
-            property: "contentY"
-            duration: Theme.scrollAnimDuration
-            easing.type: Easing.OutCubic
         }
 
         Column {
