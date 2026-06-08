@@ -248,6 +248,7 @@ HdrPqOverlay {
 
     Flickable {
         id: detailFlick
+        property real wheelTarget: 0
         anchors.fill: parent
         anchors.topMargin: 60
         contentHeight: detailCol.implicitHeight + 60
@@ -256,11 +257,20 @@ HdrPqOverlay {
 
         WheelHandler {
             onWheel: (event) => {
-                var target = detailFlick.contentY - event.angleDelta.y * 1.5
-                target = Math.max(0, Math.min(
-                    detailFlick.contentHeight - detailFlick.height, target))
+                event.accepted = true
+
+                const maxScroll =
+                    Math.max(0, detailFlick.contentHeight - detailFlick.height)
+
+                if (!detailAnim.running)
+                    detailFlick.wheelTarget = detailFlick.contentY
+
+                detailFlick.wheelTarget -= event.angleDelta.y / 120 * 100
+                detailFlick.wheelTarget = Math.max(0, Math.min(maxScroll, detailFlick.wheelTarget))
+
+                detailAnim.stop()
                 detailAnim.from = detailFlick.contentY
-                detailAnim.to = target
+                detailAnim.to = detailFlick.wheelTarget
                 detailAnim.restart()
             }
         }

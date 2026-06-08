@@ -20,13 +20,24 @@ Flickable {
         minimumSize: 0.08
     }
 
+    property real wheelTarget: 0
+
     WheelHandler {
         onWheel: (event) => {
-            var target = homeFlick.contentY - event.angleDelta.y * 1.5
-            target = Math.max(0, Math.min(
-                homeFlick.contentHeight - homeFlick.height, target))
+            event.accepted = true
+
+            const maxScroll =
+                Math.max(0, homeFlick.contentHeight - homeFlick.height)
+
+            if (!homeAnim.running)
+                wheelTarget = homeFlick.contentY
+
+            wheelTarget -= event.angleDelta.y / 120 * 100
+            wheelTarget = Math.max(0, Math.min(maxScroll, wheelTarget))
+
+            homeAnim.stop()
             homeAnim.from = homeFlick.contentY
-            homeAnim.to = target
+            homeAnim.to = wheelTarget
             homeAnim.restart()
         }
     }

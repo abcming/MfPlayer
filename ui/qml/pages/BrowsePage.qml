@@ -564,6 +564,7 @@ HdrPqOverlay {
 
                 ListView {
                     id: libraryList
+                    property real wheelTarget: 0
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     model: Library.libraryModel
@@ -578,11 +579,20 @@ HdrPqOverlay {
 
                     WheelHandler {
                         onWheel: (event) => {
-                            var target = libraryList.contentY - event.angleDelta.y * 1.5
-                            target = Math.max(0, Math.min(
-                                libraryList.contentHeight - libraryList.height, target))
+                            event.accepted = true
+
+                            const maxScroll =
+                                Math.max(0, libraryList.contentHeight - libraryList.height)
+
+                            if (!libraryAnim.running)
+                                libraryList.wheelTarget = libraryList.contentY
+
+                            libraryList.wheelTarget -= event.angleDelta.y / 120 * 100
+                            libraryList.wheelTarget = Math.max(0, Math.min(maxScroll, libraryList.wheelTarget))
+
+                            libraryAnim.stop()
                             libraryAnim.from = libraryList.contentY
-                            libraryAnim.to = target
+                            libraryAnim.to = libraryList.wheelTarget
                             libraryAnim.restart()
                         }
                     }
@@ -887,6 +897,7 @@ HdrPqOverlay {
                 // ── Favorites view ──
                 Flickable {
                     id: favFlick
+                    property real wheelTarget: 0
                     visible: browseRoot.currentView === "favorites"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -896,11 +907,20 @@ HdrPqOverlay {
 
                     WheelHandler {
                         onWheel: (event) => {
-                            var target = favFlick.contentY - event.angleDelta.y * 1.5
-                            target = Math.max(0, Math.min(
-                                favFlick.contentHeight - favFlick.height, target))
+                            event.accepted = true
+
+                            const maxScroll =
+                                Math.max(0, favFlick.contentHeight - favFlick.height)
+
+                            if (!favScrollAnim.running)
+                                favFlick.wheelTarget = favFlick.contentY
+
+                            favFlick.wheelTarget -= event.angleDelta.y / 120 * 100
+                            favFlick.wheelTarget = Math.max(0, Math.min(maxScroll, favFlick.wheelTarget))
+
+                            favScrollAnim.stop()
                             favScrollAnim.from = favFlick.contentY
-                            favScrollAnim.to = target
+                            favScrollAnim.to = favFlick.wheelTarget
                             favScrollAnim.restart()
                         }
                     }
@@ -994,6 +1014,7 @@ HdrPqOverlay {
                     // Search results (4 rows)
                     Flickable {
                         id: searchFlick
+                        property real wheelTarget: 0
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
@@ -1002,11 +1023,20 @@ HdrPqOverlay {
 
                         WheelHandler {
                             onWheel: (event) => {
-                                var target = searchFlick.contentY - event.angleDelta.y * 1.5
-                                target = Math.max(0, Math.min(
-                                    searchFlick.contentHeight - searchFlick.height, target))
+                                event.accepted = true
+
+                                const maxScroll =
+                                    Math.max(0, searchFlick.contentHeight - searchFlick.height)
+
+                                if (!searchScrollAnim.running)
+                                    searchFlick.wheelTarget = searchFlick.contentY
+
+                                searchFlick.wheelTarget -= event.angleDelta.y / 120 * 100
+                                searchFlick.wheelTarget = Math.max(0, Math.min(maxScroll, searchFlick.wheelTarget))
+
+                                searchScrollAnim.stop()
                                 searchScrollAnim.from = searchFlick.contentY
-                                searchScrollAnim.to = target
+                                searchScrollAnim.to = searchFlick.wheelTarget
                                 searchScrollAnim.restart()
                             }
                         }
@@ -1141,6 +1171,7 @@ HdrPqOverlay {
                 // ── Favorites tab view (horizontal rows, same as sidebar favorites) ──
                 Flickable {
                     id: favTabFlick
+                    property real wheelTarget: 0
                     visible: browseRoot.currentView === "library" && Library.currentTab === 3
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -1150,11 +1181,20 @@ HdrPqOverlay {
 
                     WheelHandler {
                         onWheel: (event) => {
-                            var target = favTabFlick.contentY - event.angleDelta.y * 1.5
-                            target = Math.max(0, Math.min(
-                                favTabFlick.contentHeight - favTabFlick.height, target))
+                            event.accepted = true
+
+                            const maxScroll =
+                                Math.max(0, favTabFlick.contentHeight - favTabFlick.height)
+
+                            if (!favTabScrollAnim.running)
+                                favTabFlick.wheelTarget = favTabFlick.contentY
+
+                            favTabFlick.wheelTarget -= event.angleDelta.y / 120 * 100
+                            favTabFlick.wheelTarget = Math.max(0, Math.min(maxScroll, favTabFlick.wheelTarget))
+
+                            favTabScrollAnim.stop()
                             favTabScrollAnim.from = favTabFlick.contentY
-                            favTabScrollAnim.to = target
+                            favTabScrollAnim.to = favTabFlick.wheelTarget
                             favTabScrollAnim.restart()
                         }
                     }
