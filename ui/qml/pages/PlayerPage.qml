@@ -33,6 +33,19 @@ Item {
         }
     }
 
+    // ── Global wheel → volume (anywhere on page) ──
+    WheelHandler {
+        onWheel: (event) => {
+            event.accepted = true
+            let vol = Playback.volume - event.angleDelta.y / 120 * 5
+            vol = Math.max(0, Math.min(100, vol))
+            Playback.setVolume(vol)
+            cursorVisible = true
+            hideCursorTimer.restart()
+            volumeOverlay.show()
+        }
+    }
+
     // ── Input properties ──
     property string itemId: ""
     property string episodeTitle: ""
@@ -668,6 +681,85 @@ Item {
         }
         }
 
+    }
+
+    // ── Volume overlay (bottom-center, appears briefly on wheel scroll) ──
+    Rectangle {
+        id: volumeOverlay
+        anchors {
+            bottom: parent.bottom
+            bottomMargin: 80
+            horizontalCenter: parent.horizontalCenter
+        }
+        width: 280
+        height: 48
+        z: 0
+        radius: 8
+        color: Qt.rgba(0, 0, 0, 0.7)
+
+        opacity: 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+
+        function show() {
+            _volumeFadeTimer.restart()
+            opacity = 1
+        }
+
+        Timer {
+            id: _volumeFadeTimer
+            interval: 1500
+            onTriggered: volumeOverlay.opacity = 0
+        }
+
+        Row {
+            anchors.centerIn: parent
+            spacing: 10
+
+            Icon {
+                name: "volume_up"
+                color: Theme.textPrimary
+                size: 18
+            }
+
+            Slider {
+                id: volSlider
+                focusPolicy: Qt.NoFocus
+                width: 140
+                anchors.verticalCenter: parent.verticalCenter
+                from: 0
+                to: 100
+                value: Playback.volume
+                onMoved: Playback.setVolume(value)
+
+                background: Rectangle {
+                    x: volSlider.leftPadding
+                    y: volSlider.topPadding + volSlider.availableHeight / 2 - 2
+                    implicitHeight: 3
+                    width: volSlider.availableWidth
+                    height: 3
+                    radius: 1
+                    color: Theme.textDisabled
+
+                    Rectangle {
+                        width: volSlider.visualPosition * parent.width
+                        height: parent.height
+                        color: Theme.primary
+                        radius: 1
+                    }
+                }
+
+                handle: Rectangle {
+                    x: volSlider.leftPadding + volSlider.visualPosition
+                       * (volSlider.availableWidth - width)
+                    y: volSlider.topPadding + volSlider.availableHeight / 2 - height / 2
+                    implicitWidth: 8
+                    implicitHeight: 8
+                    radius: 4
+                    color: Theme.primary
+                }
+            }
+        }
     }
 
     // ── Bottom hover container (always visible) ──
