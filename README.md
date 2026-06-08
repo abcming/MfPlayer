@@ -4,7 +4,7 @@ Emby desktop media player powered by Qt 6 QML + libmpv.
 
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![License](https://img.shields.io/badge/license-GPLv3-green)
-![Qt](https://img.shields.io/badge/Qt-6.8-green)
+![Qt](https://img.shields.io/badge/Qt-6.11-green)
 
 ## Features
 
@@ -25,7 +25,7 @@ Emby desktop media player powered by Qt 6 QML + libmpv.
 ### Prerequisites
 
 - Visual Studio 2022 (Community or above)
-- Qt 6.8+ (MSVC 2022 64-bit)
+- Qt 6.11+ (MSVC 2022 64-bit)
 - vcpkg
 - Git
 
@@ -72,7 +72,7 @@ Creates a portable zip in `deploy/`.
 
 ## Dependencies
 
-- Qt 6.8+ (Quick, Qml, QuickControls2, Network, OpenGL, Sql, ShaderTools)
+- Qt 6.11+ (Quick, Qml, QuickControls2, Network, OpenGL, Sql, ShaderTools)
 - libmpv (D3D11 render API fork)
 - libcurl (HTTP/2)
 - D3D11 (Windows SDK)
