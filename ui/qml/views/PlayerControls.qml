@@ -6,26 +6,88 @@ import QtQuick.Layouts
 
 Rectangle {
     id: controlsRoot
-    height: 60
-    color: Qt.rgba(0, 0, 0, 0.7)
+    height: volumeOnly ? 40 : 60
+    color: volumeOnly ? "transparent" : Qt.rgba(0, 0, 0, 0.7)
     radius: 8
     visible: true
 
     property int episodeIndex: -1
     property var playlistData: []
+    property bool volumeOnly: false
     readonly property bool fullscreen: Playback.fullscreen
     signal prevClicked()
     signal nextClicked()
 
+    // ── Volume-only strip (same position as the volume slider in the
+    // full controls: right-aligned, accounting for fullscreen button 36px
+    // + spacing 4px + right margin 8px = 48px from the right edge) ──
+    Row {
+        anchors {
+            right: parent.right
+            rightMargin: 48
+            verticalCenter: parent.verticalCenter
+        }
+        spacing: 4
+        visible: volumeOnly
+
+        Icon {
+            name: Playback.volume > 0 ? "volume_up" : "volume_off"
+            color: Theme.textTertiary
+            size: 18
+            anchors.verticalCenter: parent.verticalCenter
+        }
+
+        Slider {
+            id: volumeOnlySlider
+            focusPolicy: Qt.NoFocus
+            width: 80
+            anchors.verticalCenter: parent.verticalCenter
+            from: 0
+            to: 100
+            value: Playback.volume
+            onMoved: Playback.setVolume(value)
+
+            background: Rectangle {
+                x: volumeOnlySlider.leftPadding
+                y: volumeOnlySlider.topPadding + volumeOnlySlider.availableHeight / 2 - 2
+                implicitHeight: 3
+                width: volumeOnlySlider.availableWidth
+                height: 3
+                radius: 1
+                color: Theme.textDisabled
+
+                Rectangle {
+                    width: volumeOnlySlider.visualPosition * parent.width
+                    height: parent.height
+                    color: Theme.primary
+                    radius: 1
+                }
+            }
+
+            handle: Rectangle {
+                x: volumeOnlySlider.leftPadding + volumeOnlySlider.visualPosition
+                   * (volumeOnlySlider.availableWidth - width)
+                y: volumeOnlySlider.topPadding + volumeOnlySlider.availableHeight / 2 - height / 2
+                implicitWidth: 8
+                implicitHeight: 8
+                radius: 4
+                color: Theme.primary
+            }
+        }
+    }
+
+    // ── Full controls layout ──
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 8
         spacing: 4
+        visible: !volumeOnly
 
         // Progress bar
         // live:true — handle follows mouse during drag.
         // Seek directly on every value change for frame-level scrubbing.
         Slider {
+            visible: !controlsRoot.volumeOnly
             id: progressSlider
             focusPolicy: Qt.NoFocus
             Layout.fillWidth: true
@@ -169,17 +231,18 @@ Rectangle {
             spacing: 12
 
             Label {
+                visible: !controlsRoot.volumeOnly
                 text: progressSlider._cachedTime
                 color: Theme.textTertiary
                 font.pixelSize: 12
                 Layout.preferredWidth: 120
             }
 
-            Item { Layout.fillWidth: true }
+            Item { visible: !controlsRoot.volumeOnly; Layout.fillWidth: true }
 
             // Prev episode
             Button {
-                visible: playlistData.length > 1 && episodeIndex > 0
+                visible: !controlsRoot.volumeOnly && playlistData.length > 1 && episodeIndex > 0
                 focusPolicy: Qt.NoFocus
                 flat: true
                 implicitWidth: 36; implicitHeight: 36
@@ -198,6 +261,7 @@ Rectangle {
             }
 
             Button {
+                visible: !controlsRoot.volumeOnly
                 focusPolicy: Qt.NoFocus
                 flat: true
                 implicitWidth: 36; implicitHeight: 36
@@ -217,7 +281,7 @@ Rectangle {
 
             // Next episode
             Button {
-                visible: playlistData.length > 1
+                visible: !controlsRoot.volumeOnly && playlistData.length > 1
                          && episodeIndex >= 0
                          && episodeIndex < playlistData.length - 1
                 focusPolicy: Qt.NoFocus
@@ -237,13 +301,14 @@ Rectangle {
                 }
             }
 
-            Item { Layout.fillWidth: true }
+            Item { visible: !controlsRoot.volumeOnly; Layout.fillWidth: true }
 
             RowLayout {
                 spacing: 4
 
                 // Speed selector
                 Button {
+                    visible: !controlsRoot.volumeOnly
                     id: speedBtn
                     focusPolicy: Qt.NoFocus
                     flat: true
@@ -335,7 +400,7 @@ Rectangle {
                 }
 
                 Icon {
-                    name: "volume_up"
+                    name: Playback.volume > 0 ? "volume_up" : "volume_off"
                     color: Theme.textTertiary
                     size: 18
                 }
@@ -379,6 +444,7 @@ Rectangle {
 
                 // Fullscreen toggle
                 Button {
+                    visible: !controlsRoot.volumeOnly
                     focusPolicy: Qt.NoFocus
                     flat: true
                     implicitWidth: 36; implicitHeight: 36

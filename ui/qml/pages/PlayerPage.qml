@@ -42,7 +42,7 @@ Item {
             Playback.setVolume(vol)
             cursorVisible = true
             hideCursorTimer.restart()
-            volumeOverlay.show()
+            showVolumeStrip()
         }
     }
 
@@ -422,7 +422,7 @@ Item {
                 width: 36; height: 36
 
                 contentItem: Icon {
-                    name: "volume_up"
+                    name: "music_note"
                     color: audioBtn.hovered ? Theme.primary : Theme.textSecondary
                     size: 20
                 }
@@ -683,83 +683,21 @@ Item {
 
     }
 
-    // ── Volume overlay (bottom-center, appears briefly on wheel scroll) ──
-    Rectangle {
-        id: volumeOverlay
-        anchors {
-            bottom: parent.bottom
-            bottomMargin: 80
-            horizontalCenter: parent.horizontalCenter
+    // ── Volume strip fade timer (reuses existing PlayerControls volume slider) ──
+    Timer {
+        id: _volumeFadeTimer
+        interval: 1500
+        onTriggered: {
+            controls._noFade = true
+            controls.volumeOnly = false
+            controls._noFade = false
         }
-        width: 280
-        height: 48
-        z: 0
-        radius: 8
-        color: Qt.rgba(0, 0, 0, 0.7)
+    }
 
-        opacity: 0
-        visible: opacity > 0
-        Behavior on opacity { NumberAnimation { duration: 150 } }
-
-        function show() {
-            _volumeFadeTimer.restart()
-            opacity = 1
-        }
-
-        Timer {
-            id: _volumeFadeTimer
-            interval: 1500
-            onTriggered: volumeOverlay.opacity = 0
-        }
-
-        Row {
-            anchors.centerIn: parent
-            spacing: 10
-
-            Icon {
-                name: "volume_up"
-                color: Theme.textPrimary
-                size: 18
-            }
-
-            Slider {
-                id: volSlider
-                focusPolicy: Qt.NoFocus
-                width: 140
-                anchors.verticalCenter: parent.verticalCenter
-                from: 0
-                to: 100
-                value: Playback.volume
-                onMoved: Playback.setVolume(value)
-
-                background: Rectangle {
-                    x: volSlider.leftPadding
-                    y: volSlider.topPadding + volSlider.availableHeight / 2 - 2
-                    implicitHeight: 3
-                    width: volSlider.availableWidth
-                    height: 3
-                    radius: 1
-                    color: Theme.textDisabled
-
-                    Rectangle {
-                        width: volSlider.visualPosition * parent.width
-                        height: parent.height
-                        color: Theme.primary
-                        radius: 1
-                    }
-                }
-
-                handle: Rectangle {
-                    x: volSlider.leftPadding + volSlider.visualPosition
-                       * (volSlider.availableWidth - width)
-                    y: volSlider.topPadding + volSlider.availableHeight / 2 - height / 2
-                    implicitWidth: 8
-                    implicitHeight: 8
-                    radius: 4
-                    color: Theme.primary
-                }
-            }
-        }
+    function showVolumeStrip() {
+        if (!Playback.playing || bottomHoverHandler.hovered) return
+        controls.volumeOnly = true
+        _volumeFadeTimer.restart()
     }
 
     // ── Bottom hover container (always visible) ──
@@ -774,13 +712,18 @@ Item {
         height: 60 + 60
         z: 1
 
-        HoverHandler { id: bottomHoverHandler }
+        HoverHandler {
+            id: bottomHoverHandler
+            onHoveredChanged: { if (hovered && controls.volumeOnly) controls.volumeOnly = false }
+        }
 
         PlayerControls {
             id: controls
-            opacity: ((bottomHoverHandler.hovered && cursorVisible) || !Playback.playing) ? 1 : 0
+            opacity: ((bottomHoverHandler.hovered && cursorVisible) || !Playback.playing || volumeOnly) ? 1 : 0
             visible: opacity > 0
-            Behavior on opacity { NumberAnimation { duration: 200 } }
+            property bool _noFade: false
+            Behavior on opacity { NumberAnimation { duration: controls._noFade ? 0 : 200 } }
+            onVolumeOnlyChanged: { if (!volumeOnly) _volumeFadeTimer.stop() }
             anchors {
                 bottom: parent.bottom
                 left: parent.left

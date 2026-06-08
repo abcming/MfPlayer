@@ -38,8 +38,10 @@ Item {
     MFIcon_subtitles       { id: ic_subtitles;       anchors.fill: parent; color: root.color; visible: root.name === "subtitles" }
     MFIcon_toc             { id: ic_toc;             anchors.fill: parent; color: root.color; visible: root.name === "toc" }
     MFIcon_volume_up       { id: ic_volume_up;       anchors.fill: parent; color: root.color; visible: root.name === "volume_up" }
+    MFIcon_volume_off      { id: ic_volume_off;      anchors.fill: parent; color: root.color; visible: root.name === "volume_off" }
     MFIcon_heart           { id: ic_heart;           anchors.fill: parent; color: root.color; visible: root.name === "heart" }
     MFIcon_heart_filled    { id: ic_heart_filled;    anchors.fill: parent; color: root.color; visible: root.name === "heart_filled" }
     MFIcon_sort            { id: ic_sort;            anchors.fill: parent; color: root.color; visible: root.name === "sort" }
     MFIcon_funnel          { id: ic_funnel;          anchors.fill: parent; color: root.color; visible: root.name === "funnel" }
+    MFIcon_music_note      { id: ic_music_note;      anchors.fill: parent; color: root.color; visible: root.name === "music_note" }
 }

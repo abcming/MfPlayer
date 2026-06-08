@@ -89,7 +89,7 @@ set_source_files_properties(ui/qml/components/ImageLoadQueue.qml PROPERTIES QT_Q
 # ── SVG → QML Shape conversion (GPU CurveRenderer) ──
 set(ICON_NAMES arrow_back check chevron_right close fullscreen fullscreen_exit
     home movie pause play_arrow playlist_play replay search skip_next
-    skip_previous star subtitles toc volume_up heart heart_filled sort funnel)
+    skip_previous star subtitles toc volume_up volume_off heart heart_filled sort funnel music_note)
 
 set(GENERATED_ICON_QMLS "")
 set(SVGTOQML_SCRIPT "${CMAKE_SOURCE_DIR}/tools/svg_to_icon_qml.sh")
