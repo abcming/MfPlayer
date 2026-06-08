@@ -189,7 +189,9 @@ Item {
         // ── Top bar ──
         Rectangle {
             id: topBar
-            visible: topHoverHandler.hovered && cursorVisible
+            opacity: (topHoverHandler.hovered && cursorVisible) ? 1 : 0
+            visible: opacity > 0
+            Behavior on opacity { NumberAnimation { duration: 200 } }
             anchors { left: parent.left; right: parent.right; top: parent.top }
             height: 56
             color: Qt.rgba(0, 0, 0, 0.7)
@@ -684,7 +686,9 @@ Item {
 
         PlayerControls {
             id: controls
-            visible: (bottomHoverHandler.hovered && cursorVisible) || !Playback.playing
+            opacity: ((bottomHoverHandler.hovered && cursorVisible) || !Playback.playing) ? 1 : 0
+            visible: opacity > 0
+            Behavior on opacity { NumberAnimation { duration: 200 } }
             anchors {
                 bottom: parent.bottom
                 left: parent.left
