@@ -24,7 +24,13 @@ Item {
         id: hideCursorTimer
         interval: 3000
         running: true
-        onTriggered: cursorVisible = false
+        onTriggered: {
+            if (topHoverHandler.hovered || bottomHoverHandler.hovered) {
+                restart()
+                return
+            }
+            cursorVisible = false
+        }
     }
 
     // ── Input properties ──
