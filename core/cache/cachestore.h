@@ -42,6 +42,7 @@ public:
     Q_INVOKABLE QString cachedImageUrl(const QString &url);   // file:// URL if cached
     QString resolveImagePath(const QString &urlHash) const;   // raw path for ImageCacheProvider
     Q_INVOKABLE void fetchImage(const QString &url);          // async download + cache
+    void setSkipSslVerify(bool skip);
 
     // ── Cache lifecycle ───────────────────────────────────────────
     void updateItemFieldInCache(const QString &itemId, const QString &fieldName, const QVariant &value);

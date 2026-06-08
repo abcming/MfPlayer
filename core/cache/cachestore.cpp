@@ -474,6 +474,10 @@ auto it = m_imageCache.find(hash);
     doFetchImage(url, 1);
 }
 
+void CacheStore::setSkipSslVerify(bool skip) {
+    m_curl->setSkipSslVerify(skip);
+}
+
 void CacheStore::processDownloadQueue() {
     if (m_downloadQueue.isEmpty()) return;
     auto next = m_downloadQueue.takeFirst();

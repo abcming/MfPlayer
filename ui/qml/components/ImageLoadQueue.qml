@@ -49,13 +49,19 @@ QtObject {
         _tryGrant();
     }
 
-    // Cancel a pending request (e.g. URL changed or caller destroyed)
+    // Cancel a pending or granted request (e.g. URL changed or caller destroyed).
+    // If the caller was still in the queue (pending), just remove it — active
+    // wasn't incremented.  If it was already granted (not in queue), decrement
+    // active so the slot doesn't leak — _resetLoad() squashes the onStatusChanged
+    // path that would normally call release().
     function cancel(caller) {
         let filtered = entries.filter(e => e.caller !== caller);
         if (filtered.length !== entries.length) {
             entries = filtered;
+        } else {
+            active = Math.max(0, active - 1);
+            _tryGrant();
         }
-        // Don't decrement active — caller wasn't granted yet
     }
 
     function _tryGrant() {
