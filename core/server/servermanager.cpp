@@ -71,6 +71,11 @@ void ServerManager::switchToServer(int serverId) {
     QString password = s["password"].toString();
     QString username = s["username"].toString();
 
+    // Clear all models BEFORE changing server URL, so no delegate
+    // can bind old model data to the new m_serverUrl and trigger
+    // spurious downloads with wrong URLs.
+    emit loggedOut();
+
     m_emby->logout();  // clear old credentials before changing server URL
     m_emby->setServer(serverUrl);
     m_emby->setAuth(token, userId);
@@ -79,8 +84,6 @@ void ServerManager::switchToServer(int serverId) {
     emit embyConnectedChanged();
     emit serverListChanged();
 
-    // Signal receivers to clear their data before fetching new
-    emit loggedOut();
     m_librariesGeneration = m_serverGeneration;
     m_emby->fetchLibraries();
 
