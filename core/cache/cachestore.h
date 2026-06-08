@@ -64,7 +64,11 @@ private:
     std::unique_ptr<CurlEngine> m_curl;
     QString m_cacheDir;
     // All accessed exclusively on the main thread — no mutex needed.
-    QHash<QString, QString> m_imageCache;       // urlHash → filePath
+    struct ImageCacheEntry {
+        QString filePath;  // absolute path on disk
+        QString fileUrl;   // pre-built "file://" URL (avoids QUrl::fromLocalFile every cache hit)
+    };
+    QHash<QString, ImageCacheEntry> m_imageCache;  // urlHash → entry
     QHash<QString, QJsonArray> m_itemsCache;     // parentId → items (LRU bounded)
     QHash<QString, qint64> m_itemsCacheTime;     // parentId → fetched_at
     QList<QString> m_itemsCacheLru;              // LRU order for m_itemsCache
@@ -73,6 +77,7 @@ private:
     QHash<QString, QJsonArray> m_seasonsCache;   // seriesId → seasons
     QHash<QString, QJsonArray> m_episodesCache;  // "seriesId\0seasonId" → episodes
     QSet<QString> m_pendingDownloads;            // hashes of in-flight downloads
+    QHash<QString, qint64> m_failedUrls;         // hash → failure timestamp (cooldown)
     int m_activeDownloads = 0;
     QList<QPair<QString, int>> m_downloadQueue;
     static const int kMaxActiveDownloads = 8;

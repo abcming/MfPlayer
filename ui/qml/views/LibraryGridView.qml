@@ -7,6 +7,7 @@ import QtQuick.Layouts
 GridView {
     id: grid
 
+    reuseItems: true
     model: Library.contentModel
 
     clip: true
@@ -15,8 +16,10 @@ GridView {
     // Studios (5) and episodes (6) use landscape cards, movies/series use portrait posters
     property bool landscapeMode: Library.currentTab === 5 || Library.currentTab === 6
     cellHeight: landscapeMode ? 180 : 285
-    displayMarginBeginning: 350
-    displayMarginEnd: 350
+    // ~28 rows off-screen (5000px). Keeps ~224 delegates alive
+    // to survive extreme scroll velocity (25 rows/frame @ 0.5s full-scroll).
+    displayMarginBeginning: 5000
+    displayMarginEnd: 5000
     leftMargin: 0
     rightMargin: 42
 
@@ -44,18 +47,38 @@ GridView {
         easing.type: Easing.OutCubic
     }
 
-    // Infinite scroll: load more episodes when near bottom (debounced)
+    // Infinite scroll with position anchoring.
+    // Load-more fires when within 2000px of the bottom (~7 rows of portrait cards)
+    // instead of 600px. This gives the network+model round-trip enough headroom so
+    // contentHeight stabilises long before the user reaches the new content boundary.
+    // Without this, the scrollbar thumb jumps because contentHeight ratio changes
+    // during active scrolling — making it look like the scrollbar is "chasing" cards.
+    property int _anchorIdx: -1
+
     Timer {
         id: scrollCheckTimer
         interval: 100
         onTriggered: {
-            if (Library.canLoadMore && grid.contentY + grid.height > grid.contentHeight - 600)
+            if (Library.canLoadMore && grid.contentY + grid.height > grid.contentHeight - 2000) {
+                _anchorIdx = grid.indexAt(grid.contentX + grid.cellWidth / 2,
+                                          grid.contentY + grid.cellHeight / 2)
                 Library.loadMoreEpisodes()
+            }
         }
     }
     onContentYChanged: {
-        if (Library.canLoadMore && contentY + height > contentHeight - 600)
+        if (Library.canLoadMore && contentY + height > contentHeight - 2000)
             scrollCheckTimer.restart()
+    }
+
+    Connections {
+        target: Library.contentModel
+        function onRowsInserted() {
+            if (_anchorIdx >= 0) {
+                grid.positionViewAtIndex(_anchorIdx, GridView.Beginning)
+                _anchorIdx = -1
+            }
+        }
     }
 
     function resetScroll() {
@@ -160,130 +183,11 @@ GridView {
         }
     }
 
-    // ── Card components (defined once, reused by all delegates via Loader) ──
-
-    Component {
-        id: landscapeCard
-        Rectangle {
-            radius: 6
-            color: "transparent"
-            property string itemName: ""
-            property string year: ""
-            property string itemId: ""
-            property string imageUrl: ""
-            property bool isFavorite: false
-            property bool played: false
-            property string seriesName: ""
-
-            HoverHandler { id: _lh }
-
-            Column {
-                anchors.fill: parent
-                anchors.margins: 6
-                spacing: 2
-
-                RoundedImage {
-                    width: parent.width
-                    height: 135
-                    imgRadius: 4
-                    lazyLoad: true
-                    externalHover: _lh.hovered
-                    embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
-                }
-                Label {
-                    text: seriesName || itemName || "?"
-                    color: Theme.textPrimary; font.pixelSize: 12
-                    width: parent.width; elide: Text.ElideRight; maximumLineCount: 1
-                }
-                Label {
-                    text: seriesName ? itemName : (year || "")
-                    color: Theme.textMuted; font.pixelSize: 11
-                    width: parent.width; elide: Text.ElideRight; maximumLineCount: 1
-                    visible: text !== ""
-                }
-            }
-
-            Row {
-                anchors { top: parent.top; right: parent.right; margins: 6 }
-                spacing: 4
-                visible: _lh.hovered && Library.currentTab === 6
-                z: 10
-                Rectangle {
-                    width: 28; height: 28; radius: 14
-                    color: _lfm.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                    Icon { anchors.centerIn: parent; name: isFavorite ? "heart_filled" : "heart"; color: isFavorite ? Theme.primary : Theme.textPrimary; size: 16 }
-                    MouseArea { id: _lfm; anchors.fill: parent; hoverEnabled: true; onClicked: { if (isFavorite) Detail.removeFavorite(itemId); else Detail.addFavorite(itemId) } }
-                }
-                Rectangle {
-                    width: 28; height: 28; radius: 14
-                    color: _lpm.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                    Icon { anchors.centerIn: parent; name: "check"; color: played ? Theme.primary : Theme.textPrimary; size: 16 }
-                    MouseArea { id: _lpm; anchors.fill: parent; hoverEnabled: true; onClicked: { if (played) Detail.markUnplayed(itemId); else Detail.markPlayed(itemId) } }
-                }
-            }
-        }
-    }
-
-    Component {
-        id: portraitCard
-        Rectangle {
-            radius: 6
-            color: "transparent"
-            property string itemName: ""
-            property string year: ""
-            property string itemId: ""
-            property string imageUrl: ""
-            property bool isFavorite: false
-            property bool played: false
-            property string seriesName: ""
-
-            HoverHandler { id: _ph }
-
-            Row {
-                anchors { top: parent.top; right: parent.right; margins: 10 }
-                spacing: 4
-                visible: _ph.hovered && Library.currentTab !== 4 && Library.currentTab !== 5
-                z: 10
-                Rectangle {
-                    width: 28; height: 28; radius: 14
-                    color: _pfm.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                    Icon { anchors.centerIn: parent; name: isFavorite ? "heart_filled" : "heart"; color: isFavorite ? Theme.primary : Theme.textPrimary; size: 16 }
-                    MouseArea { id: _pfm; anchors.fill: parent; hoverEnabled: true; onClicked: { if (isFavorite) Detail.removeFavorite(itemId); else Detail.addFavorite(itemId) } }
-                }
-                Rectangle {
-                    width: 28; height: 28; radius: 14
-                    color: _ppm.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                    Icon { anchors.centerIn: parent; name: "check"; color: played ? Theme.primary : Theme.textPrimary; size: 16 }
-                    MouseArea { id: _ppm; anchors.fill: parent; hoverEnabled: true; onClicked: { if (played) Detail.markUnplayed(itemId); else Detail.markPlayed(itemId) } }
-                }
-            }
-
-            Column {
-                anchors.fill: parent
-                anchors.margins: 4
-                spacing: 4
-                RoundedImage {
-                    width: parent.width; height: 213
-                    imgRadius: 8
-                    lazyLoad: true; externalHover: _ph.hovered
-                    embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
-                }
-                Label {
-                    text: itemName || "?"
-                    color: Theme.textPrimary; font.pixelSize: 12
-                    elide: Text.ElideRight; width: parent.width
-                    maximumLineCount: 2; wrapMode: Text.Wrap
-                }
-                Label {
-                    text: year || ""
-                    color: Theme.textMuted; font.pixelSize: 11
-                    visible: text !== ""
-                }
-            }
-        }
-    }
-
-    // ── Delegate: single Loader instead of dual branches ──
+    // ── Delegate: single-tree dynamic layout. Differences between landscape
+    // (studios/episodes) and portrait (movies/series) are just sizes/spacing,
+    // handled via ternary on grid.landscapeMode. One CachedImage, one ShaderEffect,
+    // one HoverHandler per delegate — half the binding re-evaluation on recycle
+    // compared to the dual-visible-tree approach.
     delegate: Item {
         required property string imageUrl
         required property string itemName
@@ -310,22 +214,60 @@ GridView {
             }
         }
 
-        Loader {
-            id: cardLoader
+        HoverHandler { id: _h }
+
+        Column {
             anchors.fill: parent
-            sourceComponent: grid.landscapeMode ? landscapeCard : portraitCard
-            onItemChanged: {
-                if (!cardLoader.item) return
-                // Direct assignment for static properties (set once, never change).
-                // Only isFavorite + played use Binding for live model-update reactivity.
-                cardLoader.item.imageUrl = imageUrl
-                cardLoader.item.itemName = itemName
-                cardLoader.item.year = year
-                cardLoader.item.itemId = itemId
-                cardLoader.item.seriesName = seriesName
+            anchors.margins: grid.landscapeMode ? 6 : 4
+            spacing: grid.landscapeMode ? 2 : 4
+
+            RoundedImage {
+                width: parent.width
+                height: grid.landscapeMode ? 135 : 213
+                imgRadius: grid.landscapeMode ? 4 : 8
+                lazyLoad: true
+                externalHover: _h.hovered
+                embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
             }
-            Binding { target: cardLoader.item; property: "isFavorite"; value: isFavorite }
-            Binding { target: cardLoader.item; property: "played";     value: played     }
+            Label {
+                text: grid.landscapeMode ? (seriesName || itemName || "?") : (itemName || "?")
+                color: Theme.textPrimary; font.pixelSize: 12
+                width: parent.width; elide: Text.ElideRight
+                maximumLineCount: grid.landscapeMode ? 1 : 2
+                wrapMode: grid.landscapeMode ? Text.NoWrap : Text.Wrap
+            }
+            Label {
+                text: grid.landscapeMode ? (seriesName ? itemName : (year || "")) : (year || "")
+                color: Theme.textMuted; font.pixelSize: 11
+                elide: Text.ElideRight; width: parent.width; maximumLineCount: 1
+                visible: text !== ""
+            }
+        }
+
+        Row {
+            id: actionRow
+            anchors {
+                top: parent.top
+                right: parent.right
+                margins: grid.landscapeMode ? 6 : 10
+            }
+            spacing: 4
+            visible: _h.hovered && (grid.landscapeMode
+                ? Library.currentTab === 6
+                : (Library.currentTab !== 4 && Library.currentTab !== 5))
+            z: 10
+            Rectangle {
+                width: 28; height: 28; radius: 14
+                color: _fm.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
+                Icon { anchors.centerIn: parent; name: isFavorite ? "heart_filled" : "heart"; color: isFavorite ? Theme.primary : Theme.textPrimary; size: 16 }
+                MouseArea { id: _fm; anchors.fill: parent; hoverEnabled: true; onClicked: { if (isFavorite) Detail.removeFavorite(itemId); else Detail.addFavorite(itemId) } }
+            }
+            Rectangle {
+                width: 28; height: 28; radius: 14
+                color: _pm.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
+                Icon { anchors.centerIn: parent; name: "check"; color: played ? Theme.primary : Theme.textPrimary; size: 16 }
+                MouseArea { id: _pm; anchors.fill: parent; hoverEnabled: true; onClicked: { if (played) Detail.markUnplayed(itemId); else Detail.markPlayed(itemId) } }
+            }
         }
     }
 }

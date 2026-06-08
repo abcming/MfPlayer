@@ -125,7 +125,7 @@ void CacheStore::connectDBWorker() {
     // Image cache loaded from DB — merge into in-memory cache on main thread
     connect(m_dbWorker, &DBWorker::imageCacheLoaded, this, [this](QHash<QString, QString> entries) {
 for (auto it = entries.begin(); it != entries.end(); ++it)
-            m_imageCache.insert(it.key(), it.value());
+            m_imageCache.insert(it.key(), {it.value(), QUrl::fromLocalFile(it.value()).toString()});
     });
 
     // Expiry sweep completed — remove expired hashes from in-memory cache
@@ -334,7 +334,7 @@ QString CacheStore::getImagePath(const QString &url) {
 void CacheStore::putImagePath(const QString &url, const QString &localPath) {
     const QString h = hashUrl(url);
     {
-m_imageCache[h] = localPath;
+m_imageCache[h] = ImageCacheEntry{localPath, QUrl::fromLocalFile(localPath).toString()};
     }
     // SQL write goes to DBWorker — no main-thread blocking
     QMetaObject::invokeMethod(m_dbWorker, "putImagePath", Qt::QueuedConnection,
@@ -353,7 +353,7 @@ QString CacheStore::resolveImagePath(const QString &urlHash) const {
     // All accesses are on the main thread, no mutex needed.
     auto it = m_imageCache.constFind(urlHash);
     if (it != m_imageCache.constEnd())
-        return it.value();
+        return it->filePath;
     return {};
 }
 
@@ -367,22 +367,12 @@ QString CacheStore::cachedImageUrl(const QString &url) {
     {
 auto it = m_imageCache.constFind(hashKey);
         if (it != m_imageCache.constEnd())
-            return QUrl::fromLocalFile(it.value()).toString();
+            return it->fileUrl;
     }
 
-    // Slow path: DB fallback for entries not yet loaded into memory
-    QString path = getImagePath(url);
-    if (!path.isEmpty()) {
-        if (!QFile::exists(path)) {
-            QSqlQuery q(m_db);
-            q.prepare("DELETE FROM images WHERE url_hash = ?");
-            q.addBindValue(hashKey);
-            q.exec();
-            return {};
-        }
-m_imageCache[hashKey] = path;
-        return QUrl::fromLocalFile(path).toString();
-    }
+    // loadImageCache() populated m_imageCache at startup. If the
+    // image is not in memory, it genuinely doesn't exist on disk.
+    // No DB fallback — keeps the scroll hot path SQLite-free.
     return {};
 }
 
@@ -460,11 +450,19 @@ void CacheStore::fetchImage(const QString &url) {
     {
 auto it = m_imageCache.find(hash);
         if (it != m_imageCache.end()) {
-            emit imageReady(url, QUrl::fromLocalFile(it.value()).toString());
+            emit imageReady(url, it->fileUrl);
             return;
         }
         // Prevent duplicate concurrent downloads of the same URL
         if (m_pendingDownloads.contains(hash)) return;
+        // Cooldown: don't retry a recently-failed URL (CDN rate-limit protection)
+        auto fi = m_failedUrls.constFind(hash);
+        if (fi != m_failedUrls.constEnd()) {
+            qint64 now = QDateTime::currentSecsSinceEpoch();
+            if (now - fi.value() < Constants::kImageRetryCooldownMs / 1000)
+                return;
+            m_failedUrls.erase(fi);
+        }
         m_pendingDownloads.insert(hash);
     }
 
@@ -505,6 +503,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
                     if (safeThis) safeThis->doFetchImage(url, retries - 1);
                 });
             } else {
+                safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
                 emit safeThis->imageReady(url, QString());
                 done();
             }
@@ -512,6 +511,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
         }
 
         if (r.httpStatus >= 400) {
+            safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
             emit safeThis->imageReady(url, QString());
             done();
             return;
@@ -525,6 +525,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
                     if (safeThis) safeThis->doFetchImage(url, retries - 1);
                 });
             } else {
+                safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
                 emit safeThis->imageReady(url, QString());
                 done();
             }
@@ -542,6 +543,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
                 return;
             }
             qWarning() << "CacheStore: unsupported image format for" << url;
+            safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
             emit safeThis->imageReady(url, QString());
             done();
             return;
@@ -567,6 +569,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
                                 if (safeThis) safeThis->doFetchImage(newUrl, retries - 1);
                             });
                         } else {
+                            safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
                             emit safeThis->imageReady(url, QString());
                         }
                         done();
@@ -598,6 +601,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
                     emit safeThis->imageReady(url, QUrl::fromLocalFile(savePath).toString());
                 } else {
                     qWarning() << "CacheStore: failed to write image:" << savePath;
+                    safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
                     emit safeThis->imageReady(url, QString());
                 }
                 done();

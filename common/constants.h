@@ -12,6 +12,7 @@ namespace Constants {
     // Cache
     constexpr int kCacheExpirySeconds = 259'200;   // 3 days
     constexpr int kImageRetryDelayMs = 500;
+    constexpr int kImageRetryCooldownMs = 30'000;  // 30s cooldown after download failure
     constexpr int kFormatRetryDelayMs = 100;
 
     // Item types

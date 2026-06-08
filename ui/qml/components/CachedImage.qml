@@ -59,6 +59,16 @@ Image {
             return
         }
         if (lazyLoad) {
+            // Fast path: if the image is already cached locally, load it
+            // immediately — the 80ms lazyTimer is only needed for cold
+            // (HTTP download) paths to prevent a download storm during
+            // fast scroll. Without this check, every delegate shows blank
+            // for 80ms on every scroll pass, even for cached images.
+            if (Server.cache.cachedImageUrl(url)) {
+                source = _providerUrl(url)
+                _busy = false
+                return
+            }
             lazyTimer.restart()
             return
         }
@@ -95,9 +105,13 @@ Image {
         Server.cache.fetchImage(url)
     }
 
+    // Lazy-load timer with random stagger (80-160ms) to spread image-load
+    // callbacks across time when many delegates enter the viewport at once.
+    // Without jitter, fast scrolling creates 20+ Timers that all fire at 80ms,
+    // sending a flood of QML→C++ cache lookups + ImageProvider requests.
     Timer {
         id: lazyTimer
-        interval: 80
+        interval: 200 + Math.floor(Math.random() * 100)
         onTriggered: _startLoad()
     }
 
