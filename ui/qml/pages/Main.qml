@@ -190,6 +190,13 @@ ApplicationWindow {
         }
 
         contentItem: Item {
+            // Lock implicit width so the Dialog stays at 400 regardless of
+            // TextField content length. Otherwise a long server URL pumps
+            // TextField.implicitWidth → ColumnLayout → contentItem →
+            // Popup implicitWidth → Dialog expands, chasing the close button.
+            implicitWidth: loginDialog.width
+            clip: true
+
             layer.enabled: typeof _hdrActive !== "undefined" && _hdrActive
             layer.format: ShaderEffectSource.RGBA16F
             layer.effect: ShaderEffect {
@@ -210,6 +217,7 @@ ApplicationWindow {
             }
 
             ColumnLayout {
+                anchors.fill: parent
                 spacing: 0
 
             // Header
@@ -424,6 +432,9 @@ ApplicationWindow {
         }
 
         contentItem: Item {
+            implicitWidth: globalErrorDialog.width
+            clip: true
+
             layer.enabled: typeof _hdrActive !== "undefined" && _hdrActive
             layer.format: ShaderEffectSource.RGBA16F
             layer.effect: ShaderEffect {
@@ -444,6 +455,7 @@ ApplicationWindow {
             }
 
             ColumnLayout {
+            anchors.fill: parent
             spacing: 0
 
             Rectangle {

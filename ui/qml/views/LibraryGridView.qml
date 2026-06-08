@@ -30,24 +30,14 @@ GridView {
 
     WheelHandler {
         onWheel: (event) => {
-            if (!gridAnim.running) {
-                // Sync accumulator to current scroll position so the
-                // first event of a new scroll gesture starts from the
-                // right baseline.
-                _wheelTarget = grid.contentY
-            }
-            _wheelTarget -= event.angleDelta.y * 1.5
-            _wheelTarget = Math.max(0, Math.min(
-                grid.contentHeight - grid.height, _wheelTarget))
-            gridAnim.to = _wheelTarget
-            if (!gridAnim.running) {
-                gridAnim.from = grid.contentY
-                gridAnim.restart()
-            }
+            var target = grid.contentY - event.angleDelta.y * 1.5
+            target = Math.max(0, Math.min(
+                grid.contentHeight - grid.height, target))
+            gridAnim.from = grid.contentY
+            gridAnim.to = target
+            gridAnim.restart()
         }
     }
-
-    property real _wheelTarget: 0
 
     NumberAnimation {
         id: gridAnim
