@@ -19,8 +19,34 @@ Flickable {
         minimumSize: 0.08
     }
 
-    SmoothScroller {
+    property real wheelTarget: 0
+
+    WheelHandler {
+        onWheel: (event) => {
+            event.accepted = true
+
+            const maxScroll =
+                Math.max(0, root.contentHeight - root.height)
+
+            if (!sugAnim.running)
+                wheelTarget = root.contentY
+
+            wheelTarget -= event.angleDelta.y / 120 * 100
+            wheelTarget = Math.max(0, Math.min(maxScroll, wheelTarget))
+
+            sugAnim.stop()
+            sugAnim.from = root.contentY
+            sugAnim.to = wheelTarget
+            sugAnim.restart()
+        }
+    }
+
+    NumberAnimation {
+        id: sugAnim
         target: root
+        property: "contentY"
+        duration: Theme.scrollAnimDuration
+        easing.type: Easing.OutCubic
     }
 
     Column {

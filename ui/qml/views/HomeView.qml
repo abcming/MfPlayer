@@ -20,8 +20,34 @@ Flickable {
         minimumSize: 0.08
     }
 
-    SmoothScroller {
+    property real wheelTarget: 0
+
+    WheelHandler {
+        onWheel: (event) => {
+            event.accepted = true
+
+            const maxScroll =
+                Math.max(0, homeFlick.contentHeight - homeFlick.height)
+
+            if (!homeAnim.running)
+                wheelTarget = homeFlick.contentY
+
+            wheelTarget -= event.angleDelta.y / 120 * 100
+            wheelTarget = Math.max(0, Math.min(maxScroll, wheelTarget))
+
+            homeAnim.stop()
+            homeAnim.from = homeFlick.contentY
+            homeAnim.to = wheelTarget
+            homeAnim.restart()
+        }
+    }
+
+    NumberAnimation {
+        id: homeAnim
         target: homeFlick
+        property: "contentY"
+        duration: Theme.scrollAnimDuration
+        easing.type: Easing.OutCubic
     }
 
     Column {

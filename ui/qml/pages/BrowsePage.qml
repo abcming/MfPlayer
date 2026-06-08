@@ -564,6 +564,7 @@ HdrPqOverlay {
 
                 ListView {
                     id: libraryList
+                    property real wheelTarget: 0
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     model: Library.libraryModel
@@ -576,8 +577,32 @@ HdrPqOverlay {
                         minimumSize: 0.08
                     }
 
-                    SmoothScroller {
+                    WheelHandler {
+                        onWheel: (event) => {
+                            event.accepted = true
+
+                            const maxScroll =
+                                Math.max(0, libraryList.contentHeight - libraryList.height)
+
+                            if (!libraryAnim.running)
+                                libraryList.wheelTarget = libraryList.contentY
+
+                            libraryList.wheelTarget -= event.angleDelta.y / 120 * 100
+                            libraryList.wheelTarget = Math.max(0, Math.min(maxScroll, libraryList.wheelTarget))
+
+                            libraryAnim.stop()
+                            libraryAnim.from = libraryList.contentY
+                            libraryAnim.to = libraryList.wheelTarget
+                            libraryAnim.restart()
+                        }
+                    }
+
+                    NumberAnimation {
+                        id: libraryAnim
                         target: libraryList
+                        property: "contentY"
+                        duration: Theme.scrollAnimDuration
+                        easing.type: Easing.OutCubic
                     }
 
                     delegate: ItemDelegate {
@@ -870,8 +895,9 @@ HdrPqOverlay {
                 }
 
                 // ── Favorites view ──
-                    Flickable {
+                Flickable {
                     id: favFlick
+                    property real wheelTarget: 0
                     visible: browseRoot.currentView === "favorites"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -879,8 +905,32 @@ HdrPqOverlay {
                     contentHeight: favCol.implicitHeight + 20
                     interactive: false
 
-                    SmoothScroller {
+                    WheelHandler {
+                        onWheel: (event) => {
+                            event.accepted = true
+
+                            const maxScroll =
+                                Math.max(0, favFlick.contentHeight - favFlick.height)
+
+                            if (!favScrollAnim.running)
+                                favFlick.wheelTarget = favFlick.contentY
+
+                            favFlick.wheelTarget -= event.angleDelta.y / 120 * 100
+                            favFlick.wheelTarget = Math.max(0, Math.min(maxScroll, favFlick.wheelTarget))
+
+                            favScrollAnim.stop()
+                            favScrollAnim.from = favFlick.contentY
+                            favScrollAnim.to = favFlick.wheelTarget
+                            favScrollAnim.restart()
+                        }
+                    }
+
+                    NumberAnimation {
+                        id: favScrollAnim
                         target: favFlick
+                        property: "contentY"
+                        duration: Theme.scrollAnimDuration
+                        easing.type: Easing.OutCubic
                     }
 
                     Column {
@@ -962,16 +1012,41 @@ HdrPqOverlay {
                     }
 
                     // Search results (4 rows)
-                        Flickable {
+                    Flickable {
                         id: searchFlick
+                        property real wheelTarget: 0
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
                         contentHeight: searchCol.implicitHeight + 20
                         interactive: false
 
-                        SmoothScroller {
+                        WheelHandler {
+                            onWheel: (event) => {
+                                event.accepted = true
+
+                                const maxScroll =
+                                    Math.max(0, searchFlick.contentHeight - searchFlick.height)
+
+                                if (!searchScrollAnim.running)
+                                    searchFlick.wheelTarget = searchFlick.contentY
+
+                                searchFlick.wheelTarget -= event.angleDelta.y / 120 * 100
+                                searchFlick.wheelTarget = Math.max(0, Math.min(maxScroll, searchFlick.wheelTarget))
+
+                                searchScrollAnim.stop()
+                                searchScrollAnim.from = searchFlick.contentY
+                                searchScrollAnim.to = searchFlick.wheelTarget
+                                searchScrollAnim.restart()
+                            }
+                        }
+
+                        NumberAnimation {
+                            id: searchScrollAnim
                             target: searchFlick
+                            property: "contentY"
+                            duration: Theme.scrollAnimDuration
+                            easing.type: Easing.OutCubic
                         }
 
                         Column {
@@ -1096,6 +1171,7 @@ HdrPqOverlay {
                 // ── Favorites tab view (horizontal rows, same as sidebar favorites) ──
                 Flickable {
                     id: favTabFlick
+                    property real wheelTarget: 0
                     visible: browseRoot.currentView === "library" && Library.currentTab === 3
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -1103,8 +1179,32 @@ HdrPqOverlay {
                     contentHeight: favTabCol.implicitHeight + 20
                     interactive: false
 
-                    SmoothScroller {
+                    WheelHandler {
+                        onWheel: (event) => {
+                            event.accepted = true
+
+                            const maxScroll =
+                                Math.max(0, favTabFlick.contentHeight - favTabFlick.height)
+
+                            if (!favTabScrollAnim.running)
+                                favTabFlick.wheelTarget = favTabFlick.contentY
+
+                            favTabFlick.wheelTarget -= event.angleDelta.y / 120 * 100
+                            favTabFlick.wheelTarget = Math.max(0, Math.min(maxScroll, favTabFlick.wheelTarget))
+
+                            favTabScrollAnim.stop()
+                            favTabScrollAnim.from = favTabFlick.contentY
+                            favTabScrollAnim.to = favTabFlick.wheelTarget
+                            favTabScrollAnim.restart()
+                        }
+                    }
+
+                    NumberAnimation {
+                        id: favTabScrollAnim
                         target: favTabFlick
+                        property: "contentY"
+                        duration: Theme.scrollAnimDuration
+                        easing.type: Easing.OutCubic
                     }
 
                     Column {

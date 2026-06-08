@@ -132,7 +132,6 @@ qt_add_qml_module(mfplayer_app
         ui/qml/views/PlayerControls.qml
         ui/qml/components/CachedImage.qml
         ui/qml/components/ImageLoadQueue.qml
-        ui/qml/components/SmoothScroller.qml
         ui/qml/components/RoundedImage.qml
         ui/qml/components/TrackSelector.qml
         ui/qml/components/HorizontalMediaRow.qml
