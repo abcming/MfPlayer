@@ -125,6 +125,7 @@ signals:
 
 private:
     void onItemsFetched(const QJsonArray &items, const QString &parentId, const QString &cacheKey, int totalRecordCount);
+    void executeSearch(const QString &term);
     QString currentSortByString() const;
     QString buildFiltersString() const;
 
@@ -166,4 +167,6 @@ private:
     bool m_sortAscending = true;
     bool m_filterFavorites = false;
     int m_filterPlayed = 0; // 0=all, 1=played, 2=unplayed
+    QTimer *m_searchDebounceTimer;
+    QString m_pendingSearchTerm;
 };

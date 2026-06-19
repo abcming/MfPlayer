@@ -3,16 +3,25 @@
 #include <QSqlError>
 #include <QDebug>
 
+static bool execOrWarn(QSqlQuery &q, const char *ctx) {
+    if (!q.exec()) {
+        qWarning() << "CredentialStore:" << ctx << ":" << q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
 CredentialStore::CredentialStore(const QSqlDatabase &db, QObject *parent)
     : QObject(parent), m_db(db)
 {
     // Ensure the servers table exists (shared with CacheStore's cache.db)
     QSqlQuery q(m_db);
-    q.exec("CREATE TABLE IF NOT EXISTS servers ("
-           "id INTEGER PRIMARY KEY AUTOINCREMENT, server_url TEXT NOT NULL, "
-           "username TEXT NOT NULL, password TEXT NOT NULL, "
-           "token TEXT DEFAULT '', user_id TEXT DEFAULT '', "
-           "is_active INTEGER DEFAULT 0, last_used TEXT)");
+    q.prepare("CREATE TABLE IF NOT EXISTS servers ("
+              "id INTEGER PRIMARY KEY AUTOINCREMENT, server_url TEXT NOT NULL, "
+              "username TEXT NOT NULL, password TEXT NOT NULL, "
+              "token TEXT DEFAULT '', user_id TEXT DEFAULT '', "
+              "is_active INTEGER DEFAULT 0, last_used TEXT)");
+    execOrWarn(q, "CREATE TABLE servers");
 }
 
 int CredentialStore::addServer(const QString &serverUrl, const QString &username,
@@ -22,7 +31,7 @@ int CredentialStore::addServer(const QString &serverUrl, const QString &username
     q.prepare("SELECT id FROM servers WHERE server_url = ? AND username = ?");
     q.addBindValue(serverUrl);
     q.addBindValue(username);
-    q.exec();
+    execOrWarn(q, "SELECT server by url+user");
     if (q.next()) {
         int id = q.value(0).toInt();
         QSqlQuery u(m_db);
@@ -31,11 +40,12 @@ int CredentialStore::addServer(const QString &serverUrl, const QString &username
         u.addBindValue(token);
         u.addBindValue(userId);
         u.addBindValue(id);
-        u.exec();
+        execOrWarn(u, "UPDATE server credentials");
         return id;
     }
     QSqlQuery deact(m_db);
-    deact.exec("UPDATE servers SET is_active = 0");
+    deact.prepare("UPDATE servers SET is_active = 0");
+    execOrWarn(deact, "deactivate all servers");
     QSqlQuery ins(m_db);
     ins.prepare("INSERT INTO servers (server_url, username, password, token, user_id, is_active, last_used) "
                 "VALUES (?,?,?,?,?,1,datetime('now'))");
@@ -44,13 +54,14 @@ int CredentialStore::addServer(const QString &serverUrl, const QString &username
     ins.addBindValue(password);
     ins.addBindValue(token);
     ins.addBindValue(userId);
-    ins.exec();
+    execOrWarn(ins, "INSERT new server");
     return ins.lastInsertId().toInt();
 }
 
 QJsonArray CredentialStore::getServers() {
     QSqlQuery q(m_db);
-    q.exec("SELECT id, server_url, username, token, user_id, is_active, last_used FROM servers ORDER BY last_used DESC");
+    q.prepare("SELECT id, server_url, username, token, user_id, is_active, last_used FROM servers ORDER BY last_used DESC");
+    execOrWarn(q, "getServers");
     QJsonArray arr;
     while (q.next()) {
         QJsonObject obj;
@@ -68,7 +79,8 @@ QJsonArray CredentialStore::getServers() {
 
 QJsonObject CredentialStore::getActiveServer() {
     QSqlQuery q(m_db);
-    q.exec("SELECT id, server_url, username, password, token, user_id, last_used FROM servers WHERE is_active = 1 LIMIT 1");
+    q.prepare("SELECT id, server_url, username, password, token, user_id, last_used FROM servers WHERE is_active = 1 LIMIT 1");
+    execOrWarn(q, "getActiveServer");
     if (q.next()) {
         QJsonObject obj;
         obj["id"] = q.value(0).toInt();
@@ -86,10 +98,11 @@ QJsonObject CredentialStore::getActiveServer() {
 void CredentialStore::setActiveServer(int serverId) {
     QSqlQuery q(m_db);
     m_db.transaction();
-    q.exec("UPDATE servers SET is_active = 0");
+    q.prepare("UPDATE servers SET is_active = 0");
+    execOrWarn(q, "deactivate all servers");
     q.prepare("UPDATE servers SET is_active = 1, last_used = datetime('now') WHERE id = ?");
     q.addBindValue(serverId);
-    q.exec();
+    execOrWarn(q, "activate server");
     m_db.commit();
 }
 
@@ -97,7 +110,7 @@ void CredentialStore::removeServer(int serverId) {
     QSqlQuery q(m_db);
     q.prepare("DELETE FROM servers WHERE id = ?");
     q.addBindValue(serverId);
-    q.exec();
+    execOrWarn(q, "removeServer");
 }
 
 void CredentialStore::updateServerToken(int serverId, const QString &token, const QString &userId) {
@@ -106,14 +119,14 @@ void CredentialStore::updateServerToken(int serverId, const QString &token, cons
     q.addBindValue(token);
     q.addBindValue(userId);
     q.addBindValue(serverId);
-    q.exec();
+    execOrWarn(q, "updateServerToken");
 }
 
 QJsonObject CredentialStore::getServerById(int serverId) {
     QSqlQuery q(m_db);
     q.prepare("SELECT id, server_url, username, password, token, user_id, last_used FROM servers WHERE id = ?");
     q.addBindValue(serverId);
-    q.exec();
+    execOrWarn(q, "getServerById");
     if (q.next()) {
         QJsonObject obj;
         obj["id"] = q.value(0).toInt();

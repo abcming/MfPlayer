@@ -24,6 +24,14 @@ LibraryBrowser::LibraryBrowser(EmbyClient *emby, CacheStore *cache, QObject *par
     , m_searchPeopleModel(new MediaModel(this))
     , m_recommendModel(new MediaModel(this))
 {
+    // Search debounce: batch rapid keystrokes into a single API call
+    m_searchDebounceTimer = new QTimer(this);
+    m_searchDebounceTimer->setSingleShot(true);
+    m_searchDebounceTimer->setInterval(300);
+    connect(m_searchDebounceTimer, &QTimer::timeout, this, [this]() {
+        executeSearch(m_pendingSearchTerm);
+    });
+
     connect(m_emby, &EmbyClient::itemsFetched, this, &LibraryBrowser::onItemsFetched);
 
     connect(m_emby, &EmbyClient::latestFetched, this, [this](const QJsonArray &items, const QString &tag) {
@@ -333,11 +341,18 @@ void LibraryBrowser::fetchFavorites(const QString &libraryId) {
 
 void LibraryBrowser::search(const QString &term) {
     if (term.length() < 2) {
+        m_searchDebounceTimer->stop();
         m_searchMoviesModel->clear();
         m_searchSeriesModel->clear();
         m_searchPeopleModel->clear();
         return;
     }
+    m_pendingSearchTerm = term;
+    m_searchDebounceTimer->start();  // restarts on each call (300ms debounce)
+}
+
+void LibraryBrowser::executeSearch(const QString &term) {
+    if (term.length() < 2) return;
     m_searchMoviesModel->clear();
     m_searchSeriesModel->clear();
     m_searchPeopleModel->clear();

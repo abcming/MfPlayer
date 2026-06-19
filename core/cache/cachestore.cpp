@@ -70,6 +70,13 @@ void CacheStore::init() {
     if (!m_db.open())
         qWarning() << "CacheStore: failed to open read database:" << m_db.lastError().text();
 
+    // WAL mode: allows concurrent read + write from main thread and DBWorker without SQLITE_BUSY stalls.
+    {
+        QSqlQuery pragma(m_db);
+        if (!pragma.exec("PRAGMA journal_mode=WAL"))
+            qWarning() << "CacheStore: failed to set WAL mode:" << pragma.lastError().text();
+    }
+
     // Run DDL on main thread (fast: CREATE IF NOT EXISTS on existing tables <5ms)
     {
         QSqlQuery q(m_db);

@@ -11,6 +11,7 @@ ColumnLayout {
     property var itemData: ({})
     property int currentSeasonIdx: 0
     property int _seasonVersion: 0
+    property real _savedScrollPos: 0
 
     Connections {
         target: Detail
@@ -24,6 +25,21 @@ ColumnLayout {
     visible: (itemData.Type || "") === Str.typeSeries
 
     signal episodeClicked(string itemId, var playlistData)
+    signal seasonSelected(int idx, string seasonId)
+
+    // Restore scroll position after model reset
+    Connections {
+        target: Detail.episodeModel
+        function onModelReset() {
+            if (root._savedScrollPos > 0)
+                restoreTimer.start()
+        }
+    }
+    Timer {
+        id: restoreTimer
+        interval: 0
+        onTriggered: episodeListView.contentX = root._savedScrollPos
+    }
 
     readonly property string _seriesPosterUrl: {
         if (!Server.emby) return ""
@@ -147,9 +163,9 @@ ColumnLayout {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: {
-                            root.currentSeasonIdx = index
+                            root._savedScrollPos = 0
+                            root.seasonSelected(index, itemId)
                             seasonPopup.close()
-                            Detail.fetchEpisodes(root.itemId, itemId)
                         }
                     }
                 }
@@ -216,6 +232,7 @@ ColumnLayout {
             MouseArea {
                 anchors.fill: parent
                 onClicked: {
+                    root._savedScrollPos = episodeListView.contentX
                     root.episodeClicked(itemId, root.buildPlaylistData())
                 }
             }

@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
     QUrl url(args.at(1));
     startupFile = url.isLocalFile() ? url.toLocalFile() : args.at(1);
   }
-  qmlEngine.rootContext()->setContextProperty("_appVersion", MFPLAYER_APP_NAME " v1.0");
+  qmlEngine.rootContext()->setContextProperty("_appVersion", MFPLAYER_APP_NAME " v" MFPLAYER_VERSION);
   qmlEngine.rootContext()->setContextProperty("_qtVersion", QT_VERSION_STR);
   qmlEngine.rootContext()->setContextProperty("_startupFile", startupFile);
 
@@ -162,12 +162,12 @@ int main(int argc, char *argv[]) {
 
     // Detect actual swapchain HDR status after warmup creates it.
     // Qt silently falls back to SDR on non-HDR systems even with _qt_sg_hdr_format set.
-    QTimer::singleShot(300, rootWin, [rootWin, &qmlEngine, playbackCtrl]() {
+    QTimer::singleShot(300, rootWin, [rootWin, ctx = qmlEngine.rootContext(), playbackCtrl]() {
         bool hdr = false;
         if (auto *sc = rootWin->swapChain()) {
             hdr = sc->format() != QRhiSwapChain::SDR;
         }
-        qmlEngine.rootContext()->setContextProperty("_hdrActive", hdr);
+        ctx->setContextProperty("_hdrActive", hdr);
         qDebug() << "HDR swapchain active:" << hdr;
 
         // Tell mpv the display capability so it picks the right target colorspace.

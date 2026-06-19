@@ -203,6 +203,7 @@ private:
     QString m_accessToken;
     QString m_userId;
     QString m_sessionId;
+    QString m_deviceId;
     bool m_authenticated = false;
     mutable QByteArray m_cachedAuthHeader;
     mutable CurlEngine::Headers m_cachedHeaders;

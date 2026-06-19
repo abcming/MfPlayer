@@ -1,4 +1,4 @@
-# build_mpv_msvc.ps1 — Build libmpv with MSVC via vcpkg dependencies
+# build_mpv_msvc.ps1 - Build libmpv with MSVC via vcpkg dependencies
 # Run from: Developer PowerShell for VS 2022 (or equivalent MSVC environment)
 # Usage: .\tools\build_mpv_msvc.ps1
 
@@ -34,15 +34,15 @@ if (Test-Path $PkgConfBin) {
     $env:PKG_CONFIG = $PkgConfBin
     Write-Host "pkg-config: $PkgConfBin" -ForegroundColor Green
 } else {
-    Write-Warning "pkgconf.exe not found at $PkgConfBin — meson may fail to find dependencies"
+    Write-Warning "pkgconf.exe not found at $PkgConfBin - meson may fail to find dependencies"
 }
 
 # mpv expects spirv-cross-c-shared.pc but vcpkg installs spirv-cross-c.pc
 # vcpkg's .pc is missing transitive deps, so we write a corrected one
 $SpirvCrossSharedPc = "$PkgConfigDir/spirv-cross-c-shared.pc"
 if (Test-Path $SpirvCrossSharedPc) { Remove-Item $SpirvCrossSharedPc -Force }
-    # All spirv-cross libs listed directly (sub-library .pc files don't exist in vcpkg)
-    $spirvPc = @"
+# All spirv-cross libs listed directly (sub-library .pc files don't exist in vcpkg)
+$spirvPc = @"
 prefix=`${pcfiledir}/../..
 exec_prefix=`${prefix}
 libdir=`${prefix}/lib
@@ -54,8 +54,8 @@ Version: 0.68.0
 Libs: -L`${libdir} -lspirv-cross-c -lspirv-cross-core -lspirv-cross-glsl -lspirv-cross-hlsl -lspirv-cross-msl -lspirv-cross-reflect -lspirv-cross-util -lspirv-cross-cpp
 Cflags: -I`${includedir}
 "@
-    [System.IO.File]::WriteAllText($SpirvCrossSharedPc, $spirvPc, [System.Text.UTF8Encoding]::new($false))
-    Write-Host "Created spirv-cross-c-shared.pc with all libs in Libs:" -ForegroundColor Yellow
+[System.IO.File]::WriteAllText($SpirvCrossSharedPc, $spirvPc, [System.Text.UTF8Encoding]::new($false))
+Write-Host "Created spirv-cross-c-shared.pc with all libs in Libs:" -ForegroundColor Yellow
 
 # Step 2: Check libplacebo (needs special handling)
 Write-Host "`n=== Step 2: Checking libplacebo ===" -ForegroundColor Yellow
@@ -70,7 +70,7 @@ if (-not (Test-Path $PlaceboPc)) {
         Write-Host "Cloning libplacebo..."
         git clone --depth 1 --recurse-submodules https://code.videolan.org/videolan/libplacebo.git "$PlaceboDir"
     }
-    # Create meson subproject wrap (UTF8 without BOM — meson chokes on BOM)
+    # Create meson subproject wrap (UTF8 without BOM - meson chokes on BOM)
     $WrapFile = "$SubprojectsDir/libplacebo.wrap"
     if (Test-Path $WrapFile) { Remove-Item $WrapFile -Force }
     $wrapContent = "[wrap-git]`nurl = https://code.videolan.org/videolan/libplacebo.git`ndepth = 1`n`n[provide]`nlibplacebo = libplacebo_dep`n"
@@ -139,7 +139,7 @@ if (-not (Test-Path "$DepsDir/vulkan-1.dll")) {
         Copy-Item $VkDll $DepsDir -Force
         Write-Host "Deployed vulkan-1.dll" -ForegroundColor Green
     } else {
-        Write-Host "vulkan-1.dll not found — system GPU driver should provide it" -ForegroundColor Yellow
+        Write-Host "vulkan-1.dll not found - system GPU driver should provide it" -ForegroundColor Yellow
     }
 }
 

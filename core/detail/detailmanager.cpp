@@ -118,7 +118,8 @@ MediaModel *DetailManager::personSeriesModel() const { return m_personSeriesMode
 // ── Public slots ────────────────────────────────────────────────────
 
 void DetailManager::browseItem(const QString &itemId) {
-    if (!m_browsingItemId.isEmpty() && itemId == m_browsingItemId) {
+    // Same item as before — preserve season/episode selection
+    if (itemId == m_browsingItemId) {
         QJsonObject cached = m_cache->getItemDetail(itemId);
         if (!cached.isEmpty()) {
             emit itemDetailReady(itemId, cached.toVariantMap());
@@ -153,6 +154,22 @@ void DetailManager::browseItem(const QString &itemId) {
 }
 
 void DetailManager::fetchSeasons(const QString &seriesId) {
+    // Same series with seasons already loaded — preserve user's season selection
+    if (seriesId == m_currentSeriesId && m_seasonModel->rowCount() > 0) {
+        // Just re-fetch episodes for the current season (browseItem cleared episodeModel)
+        QJsonArray cached = m_cache->getSeasons(seriesId);
+        if (!cached.isEmpty()) {
+            cached = sortByIndexNumber(cached);
+            // Find the season matching m_currentSeasonId and fetch its episodes
+            for (const auto &s : cached) {
+                if (s.toObject()["Id"].toString() == m_currentSeasonId) {
+                    m_emby->fetchEpisodes(seriesId, m_currentSeasonId);
+                    return;
+                }
+            }
+            // Previous season no longer exists — fall through to full refresh
+        }
+    }
     m_currentSeriesId = seriesId;
 
     QJsonArray cached = m_cache->getSeasons(seriesId);
@@ -160,7 +177,17 @@ void DetailManager::fetchSeasons(const QString &seriesId) {
         cached = sortByIndexNumber(cached);
         m_seasonModel->setItems(cached);
         emit seasonsChanged();
-        m_currentSeasonId = cached.first().toObject()["Id"].toString();
+        // Preserve m_currentSeasonId if it still exists in the season list
+        QString targetId;
+        for (const auto &s : cached) {
+            if (s.toObject()["Id"].toString() == m_currentSeasonId) {
+                targetId = m_currentSeasonId;
+                break;
+            }
+        }
+        if (targetId.isEmpty())
+            targetId = cached.first().toObject()["Id"].toString();
+        m_currentSeasonId = targetId;
         m_emby->fetchEpisodes(seriesId, m_currentSeasonId);
         return;
     }

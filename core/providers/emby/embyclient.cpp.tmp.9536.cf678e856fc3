@@ -53,8 +53,7 @@ void EmbyClient::login(const QString &username, const QString &password) {
     CurlEngine::Headers headers;
     headers.push_back({"Content-Type", "application/json"});
     headers.push_back({"User-Agent", MFPLAYER_USER_AGENT});
-    QString auth = QStringLiteral("MediaBrowser Client=\"%1\", Device=\"Desktop\", DeviceId=\"%2\", Version=\"%3\"")
-                       .arg(MFPLAYER_APP_NAME, m_deviceId, MFPLAYER_VERSION);
+    QString auth = QStringLiteral("MediaBrowser Client=\"%1\", Device=\"Desktop\", DeviceId=\"%1\", Version=\"1.0\"").arg(MFPLAYER_APP_NAME);
     headers.push_back({"X-Emby-Authorization", auth.toUtf8()});
 
     QString url = m_serverUrl + "/emby/Users/AuthenticateByName";
@@ -113,8 +112,8 @@ QByteArray EmbyClient::authHeader() const {
         parts << QStringLiteral("UserId=\"%1\"").arg(m_userId);
     parts << QStringLiteral("Client=\"%1\"").arg(MFPLAYER_APP_NAME);
     parts << QStringLiteral("Device=\"Desktop\"");
-    parts << QStringLiteral("DeviceId=\"%1\"").arg(m_deviceId);
-    parts << QStringLiteral("Version=\"%1\"").arg(MFPLAYER_VERSION);
+    parts << QStringLiteral("DeviceId=\"%1\"").arg(MFPLAYER_APP_NAME);
+    parts << QStringLiteral("Version=\"1.0\"");
     m_cachedAuthHeader = QStringLiteral("MediaBrowser %1").arg(parts.join(", ")).toUtf8();
     return m_cachedAuthHeader;
 }

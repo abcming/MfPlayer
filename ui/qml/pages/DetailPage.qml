@@ -56,6 +56,7 @@ HdrPqOverlay {
     property int selectedAudioIdx: -1
     property int selectedSubIdx: -2
     property int _dataVersion: 0
+    property bool _skipSeasonReset: false
 
     readonly property string _logoUrl: {
         let _ = _initialLoad
@@ -102,11 +103,17 @@ HdrPqOverlay {
             if (fetchedId !== itemId) return
             detailRoot._restoring = false
             detailRoot.itemData = data
+            let isFirstLoad = detailRoot._initialLoad
             detailRoot._initialLoad = false
             let t = itemData.Type || ""
             if (t === Str.typeSeries) {
-                detailRoot.currentSeasonIdx = 0
-                Detail.fetchSeasons(itemId)
+                if (isFirstLoad) {
+                    detailRoot.currentSeasonIdx = 0
+                    Detail.fetchSeasons(itemId)
+                } else if (Detail.seasonModel.rowCount() === 0) {
+                    detailRoot._skipSeasonReset = true
+                    Detail.fetchSeasons(itemId)
+                }
             } else if (t === Str.typeEpisode) {
                 let sid = itemData.SeriesId || ""
                 let seId = itemData.SeasonId || itemData.ParentId || ""
@@ -120,6 +127,10 @@ HdrPqOverlay {
         target: Detail
         function onSeasonsChanged() {
             if (!detailRoot.itemData || detailRoot.itemData.Id !== detailRoot.itemId) return
+            if (detailRoot._skipSeasonReset) {
+                detailRoot._skipSeasonReset = false
+                return
+            }
             detailRoot.currentSeasonIdx = 0
         }
     }
@@ -595,6 +606,10 @@ HdrPqOverlay {
                 currentSeasonIdx: detailRoot.currentSeasonIdx
                 onEpisodeClicked: function(epId, playlist) {
                     Nav.pushDetail(epId)
+                }
+                onSeasonSelected: function(idx, seasonId) {
+                    detailRoot.currentSeasonIdx = idx
+                    Detail.fetchEpisodes(detailRoot.itemId, seasonId)
                 }
             }
 
