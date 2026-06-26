@@ -113,6 +113,7 @@ CurlHandle CurlEngine::send(const QByteArray &method, const QString &url,
     task->callback  = std::move(cb);
     task->urlData   = url.toUtf8();
     task->postData  = body;          // POST body 生命周期与 task 绑定
+    task->responseBody.reserve(8192);
 
     curl_easy_setopt(easy, CURLOPT_URL, task->urlData.constData());
 

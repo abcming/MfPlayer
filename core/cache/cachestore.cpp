@@ -23,7 +23,7 @@
 #include <QImageReader>
 #include <QPointer>
 #include <QDebug>
-#include <thread>
+#include "core/io_pool.h"
 
 static QString hashUrl(const QString &url) {
     return QCryptographicHash::hash(url.toUtf8(), QCryptographicHash::Md5).toHex();
@@ -43,14 +43,8 @@ CacheStore::CacheStore(QObject *parent)
 }
 
 CacheStore::~CacheStore() {
-    m_stopFlag = true;
-
     // Stop DBWorker first — drains queue, quits thread
     delete m_dbWorker;
-
-    // Join download worker threads
-    for (auto &t : m_workerThreads)
-        if (t.joinable()) t.join();
 
     if (m_db.isOpen()) {
         m_db.close();
@@ -496,13 +490,14 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
     CurlEngine::Headers headers;
     headers.push_back({"User-Agent", MFPLAYER_USER_AGENT});
 
+    const QString hash = hashUrl(url);
     QPointer<CacheStore> safeThis(this);
-    m_curl->get(url, headers, [safeThis, url, retries](const CurlResponse &r) {
+    m_curl->get(url, headers, [safeThis, url, retries, hash](const CurlResponse &r) {
         if (!safeThis) return;
 
-        auto done = [safeThis, url]() {
+        auto done = [safeThis, hash]() {
             if (!safeThis) return;
-            safeThis->m_pendingDownloads.remove(hashUrl(url));
+            safeThis->m_pendingDownloads.remove(hash);
             safeThis->m_activeDownloads--;
             safeThis->processDownloadQueue();
         };
@@ -514,7 +509,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
                     if (safeThis) safeThis->doFetchImage(url, retries - 1);
                 });
             } else {
-                safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
+                safeThis->m_failedUrls[hash] = QDateTime::currentSecsSinceEpoch();
                 emit safeThis->imageReady(url, QString());
                 done();
             }
@@ -522,7 +517,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
         }
 
         if (r.httpStatus >= 400) {
-            safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
+            safeThis->m_failedUrls[hash] = QDateTime::currentSecsSinceEpoch();
             emit safeThis->imageReady(url, QString());
             done();
             return;
@@ -536,7 +531,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
                     if (safeThis) safeThis->doFetchImage(url, retries - 1);
                 });
             } else {
-                safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
+                safeThis->m_failedUrls[hash] = QDateTime::currentSecsSinceEpoch();
                 emit safeThis->imageReady(url, QString());
                 done();
             }
@@ -554,25 +549,26 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
                 return;
             }
             qWarning() << "CacheStore: unsupported image format for" << url;
-            safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
+            safeThis->m_failedUrls[hash] = QDateTime::currentSecsSinceEpoch();
             emit safeThis->imageReady(url, QString());
             done();
             return;
         }
 
-        // Validate + write on a worker thread to avoid blocking the main thread
+        // Validate + write on the I/O thread pool to avoid blocking the main thread
         // with QImageReader::canRead() (~2ms) and QFile::write (~1ms).
         QString savePath = safeThis->imageSavePath(url);
-        std::thread worker([safeThis, url, data = std::move(data), savePath, retries, done]() mutable {
+        auto dataPtr = std::make_shared<QByteArray>(std::move(data));
+        ioPool().start([safeThis, url, hash, dataPtr, savePath, retries, done]() {
             // Validate the downloaded data is actually a decodable image.
             // Guards against HTML error pages and truncated downloads being cached.
             {
-                QBuffer buf(&data);
+                QBuffer buf(dataPtr.get());
                 buf.open(QIODevice::ReadOnly);
                 QImageReader reader(&buf);
                 if (!reader.canRead()) {
                     qWarning() << "CacheStore: downloaded data is not a valid image:" << url;
-                    QMetaObject::invokeMethod(safeThis, [safeThis, url, retries, done]() {
+                    QMetaObject::invokeMethod(safeThis, [safeThis, url, hash, retries, done]() {
                         if (!safeThis) { done(); return; }
                         if (retries > 0) {
                             QString newUrl = url.contains('?') ? url + "&format=jpg" : url + "?format=jpg";
@@ -580,7 +576,7 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
                                 if (safeThis) safeThis->doFetchImage(newUrl, retries - 1);
                             });
                         } else {
-                            safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
+                            safeThis->m_failedUrls[hash] = QDateTime::currentSecsSinceEpoch();
                             emit safeThis->imageReady(url, QString());
                         }
                         done();
@@ -597,29 +593,26 @@ void CacheStore::doFetchImage(const QString &url, int retries) {
             {
                 QFile f(tmpPath);
                 if (f.open(QIODevice::WriteOnly)) {
-                    f.write(data);
+                    f.write(*dataPtr);
                     f.close();
                     QFile::remove(savePath);
                     writeOk = QFile::rename(tmpPath, savePath);
                 }
             }
-            data.clear();  // free downloaded bytes ASAP
+            dataPtr->clear();  // free downloaded bytes ASAP
 
-            QMetaObject::invokeMethod(safeThis, [safeThis, url, savePath, writeOk, done]() {
+            QMetaObject::invokeMethod(safeThis, [safeThis, url, hash, savePath, writeOk, done]() {
                 if (!safeThis) { done(); return; }
                 if (writeOk) {
                     safeThis->putImagePath(url, savePath);
                     emit safeThis->imageReady(url, QUrl::fromLocalFile(savePath).toString());
                 } else {
                     qWarning() << "CacheStore: failed to write image:" << savePath;
-                    safeThis->m_failedUrls[hashUrl(url)] = QDateTime::currentSecsSinceEpoch();
+                    safeThis->m_failedUrls[hash] = QDateTime::currentSecsSinceEpoch();
                     emit safeThis->imageReady(url, QString());
                 }
                 done();
             });
         });
-        // Track thread for clean shutdown. Worker runs ~2ms (image validation + write).
-        // Worker threads are only touched from the main thread, so no mutex needed.
-        safeThis->m_workerThreads.push_back(std::move(worker));
     }, 15);
 }

@@ -32,6 +32,7 @@ Popup {
         radius: root.popupRadius
         color: root.bgColor
         border { color: Theme.active; width: 1 }
+
     }
 
     // Content item with HDR PQ correction via layer.effect.

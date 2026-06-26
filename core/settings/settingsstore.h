@@ -108,6 +108,8 @@ public:
     Q_INVOKABLE void saveLogin(const QString &server, const QString &username,
                                const QString &token, const QString &userId);
 
+    Q_INVOKABLE void reloadKeyBindings();
+
 signals:
     void embyServerChanged();
     void embyUsernameChanged();
@@ -137,6 +139,16 @@ private:
     int m_seekBackwardStep = 5;
     int m_windowWidth = 0;
     int m_windowHeight = 0;
+    // Cached key bindings (initialized in constructor, reloaded via reloadKeyBindings)
+    int m_keySeekBackward = 0x01000012;
+    int m_keySeekForward = 0x01000014;
+    int m_keyPlayPause = 0x20;
+    int m_keyFullscreen = 0x46;
+    int m_keyStats = 0x49;
+    int m_keySpeedDown = 0x5b;
+    int m_keySpeedUp = 0x5d;
+    int m_keyVolumeUp = 0x01000015;
+    int m_keyVolumeDown = 0x01000013;
     QTimer *m_hdrWriteTimer = nullptr;
     QTimer *m_sdrWriteTimer = nullptr;
     QTimer *m_seekFwdWriteTimer = nullptr;

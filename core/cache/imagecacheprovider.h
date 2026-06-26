@@ -27,6 +27,7 @@ public:
     QQuickTextureFactory *textureFactory() const override;
 
     QPixmap m_pixmap;  // public so provider can set it for cache-hit fast path
+    mutable QImage m_cachedImage;  // cached conversion result (lazy, avoids repeated toImage() calls)
 
 private:
     void process();

@@ -58,6 +58,7 @@ Column {
                     width: parent.width
                     height: 213
                     imgRadius: 6
+                    lazyLoad: true
                     embyUrl: Server.emby.imageUrl(imageUrl)
                 }
 

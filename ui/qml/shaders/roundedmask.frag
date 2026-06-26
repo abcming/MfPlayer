@@ -8,8 +8,8 @@ layout(std140, binding = 0) uniform buf {
     float qt_Opacity;
     float radius;
     vec4 bgColor;
-    vec2 imgSize;     // source image natural size (must be before sourceSize)
-    vec2 sourceSize;  // view/element size in physical pixels
+    vec2 imgSize;
+    vec2 sourceSize;
 };
 
 layout(binding = 1) uniform sampler2D source;
@@ -26,10 +26,10 @@ void main() {
     float viewAspect = sourceSize.x / sourceSize.y;
     if (imgAspect > viewAspect) {
         float scale = viewAspect / imgAspect;
-        uv.x = (uv.x - 0.5) * scale + 0.5;
+        uv.x = (qt_TexCoord0.x - 0.5) * scale + 0.5;
     } else {
         float scale = imgAspect / viewAspect;
-        uv.y = (uv.y - 0.5) * scale + 0.5;
+        uv.y = (qt_TexCoord0.y - 0.5) * scale + 0.5;
     }
 
     // Rounded corners

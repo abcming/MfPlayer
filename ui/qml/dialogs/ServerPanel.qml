@@ -73,6 +73,7 @@ StyledPopup {
                         RoundedImage {
                             anchors.fill: parent
                             imgRadius: 18
+                            lazyLoad: true
                             embyUrl: modelData.serverUrl && modelData.userId && modelData.token
                                 ? modelData.serverUrl + "/emby/Users/" + modelData.userId + "/Images/Primary?maxWidth=64&quality=90&api_key=" + modelData.token
                                 : ""

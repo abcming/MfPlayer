@@ -20,7 +20,7 @@ public:
     ~DBWorker() override;
 
     // Call from main thread — queues init on the worker thread.
-    // Emits ready() when the database is open and tables are created.
+    // Emits ready() when the database connection is open (DDL is handled by CacheStore::init()).
     void start();
 
     // Call from main thread during shutdown — stops accepting work,
@@ -99,7 +99,6 @@ signals:
     void dbError(const QString &message);
 
 private:
-    void initTables();
     bool isFresh(qint64 timestamp) const;
 
     QThread m_thread;

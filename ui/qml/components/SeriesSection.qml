@@ -145,6 +145,7 @@ ColumnLayout {
                         RoundedImage {
                             width: parent.width
                             height: 210
+                            lazyLoad: true
                             embyUrl: imageUrl ? Server.emby.imageUrl(imageUrl) : root._seriesPosterUrl
                         }
 
@@ -194,7 +195,6 @@ ColumnLayout {
             height: 180
             radius: 6
             color: "transparent"
-            clip: true
 
             Column {
                 anchors.fill: parent
@@ -205,6 +205,7 @@ ColumnLayout {
                     width: parent.width
                     height: 135
                     imgRadius: 4
+                    lazyLoad: true
                     embyUrl: imageUrl
                         ? Server.emby.imageUrl(imageUrl)
                         : root._episodeFallbackUrl

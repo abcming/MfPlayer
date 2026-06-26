@@ -11,7 +11,7 @@ Image {
     asynchronous: true
     cache: false
     fillMode: Image.PreserveAspectFit
-    mipmap: false
+    mipmap: true
     smooth: true
 
     // Queue grant callback — called by ImageLoadQueue when a slot is available.
@@ -105,13 +105,13 @@ Image {
         Server.cache.fetchImage(url)
     }
 
-    // Lazy-load timer with random stagger (80-160ms) to spread image-load
+    // Lazy-load timer with random stagger (100-200ms) to spread image-load
     // callbacks across time when many delegates enter the viewport at once.
-    // Without jitter, fast scrolling creates 20+ Timers that all fire at 80ms,
+    // Without jitter, fast scrolling creates 20+ Timers that all fire at once,
     // sending a flood of QML→C++ cache lookups + ImageProvider requests.
     Timer {
         id: lazyTimer
-        interval: 200 + Math.floor(Math.random() * 100)
+        interval: 100 + Math.floor(Math.random() * 100)
         onTriggered: _startLoad()
     }
 

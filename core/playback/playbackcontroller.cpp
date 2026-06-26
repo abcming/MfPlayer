@@ -156,9 +156,10 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
                 : streamUrl;
 
             // ── Language preferences BEFORE play() so mpv auto-selects correctly ──
+            QJsonArray streams = streamsForSelectedSource();
+
             // Audio: look up language from Emby Index → set alang
             if (audioIndex >= 0) {
-                QJsonArray streams = streamsForSelectedSource();
                 for (const QJsonValue &v : streams) {
                     QJsonObject st = v.toObject();
                     if (st["Type"].toString() == Constants::kStreamTypeAudio
@@ -172,7 +173,6 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
 
             // Subtitle: look up language from Emby Index → set slang
             if (subtitleIndex >= 0) {
-                QJsonArray streams = streamsForSelectedSource();
                 for (const QJsonValue &v : streams) {
                     QJsonObject st = v.toObject();
                     if (st["Type"].toString() == Constants::kStreamTypeSubtitle

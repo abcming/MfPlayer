@@ -14,6 +14,17 @@ SettingsStore::SettingsStore(QObject *parent)
     m_windowWidth = m_settings.value("ui/width", 0).toInt();
     m_windowHeight = m_settings.value("ui/height", 0).toInt();
 
+    // Initialize cached key bindings from QSettings
+    m_keySeekBackward = m_settings.value("keys/seekBackward", 0x01000012).toInt();
+    m_keySeekForward = m_settings.value("keys/seekForward", 0x01000014).toInt();
+    m_keyPlayPause = m_settings.value("keys/playPause", 0x20).toInt();
+    m_keyFullscreen = m_settings.value("keys/fullscreen", 0x46).toInt();
+    m_keyStats = m_settings.value("keys/stats", 0x49).toInt();
+    m_keySpeedDown = m_settings.value("keys/speedDown", 0x5b).toInt();
+    m_keySpeedUp = m_settings.value("keys/speedUp", 0x5d).toInt();
+    m_keyVolumeUp = m_settings.value("keys/volumeUp", 0x01000015).toInt();
+    m_keyVolumeDown = m_settings.value("keys/volumeDown", 0x01000013).toInt();
+
     // Set up debounce timers (avoids writing to disk on every drag pixel / resize event)
     m_hdrWriteTimer = new QTimer(this);
     m_hdrWriteTimer->setSingleShot(true);
@@ -221,24 +232,24 @@ void SettingsStore::setSeekBackwardStep(int v) {
 // Qt::Key enum: Left=0x01000012, Right=0x01000014, Space=0x20, F=0x46, I=0x49
 // BracketLeft=0x5b, BracketRight=0x5d, Up=0x01000015, Down=0x01000013
 
-int SettingsStore::keySeekBackward() const { return m_settings.value("keys/seekBackward", 0x01000012).toInt(); }
-void SettingsStore::setKeySeekBackward(int v) { if (v != keySeekBackward()) { m_settings.setValue("keys/seekBackward", v); emit keyBindingsChanged(); } }
-int SettingsStore::keySeekForward() const { return m_settings.value("keys/seekForward", 0x01000014).toInt(); }
-void SettingsStore::setKeySeekForward(int v) { if (v != keySeekForward()) { m_settings.setValue("keys/seekForward", v); emit keyBindingsChanged(); } }
-int SettingsStore::keyPlayPause() const { return m_settings.value("keys/playPause", 0x20).toInt(); }
-void SettingsStore::setKeyPlayPause(int v) { if (v != keyPlayPause()) { m_settings.setValue("keys/playPause", v); emit keyBindingsChanged(); } }
-int SettingsStore::keyFullscreen() const { return m_settings.value("keys/fullscreen", 0x46).toInt(); }
-void SettingsStore::setKeyFullscreen(int v) { if (v != keyFullscreen()) { m_settings.setValue("keys/fullscreen", v); emit keyBindingsChanged(); } }
-int SettingsStore::keyStats() const { return m_settings.value("keys/stats", 0x49).toInt(); }
-void SettingsStore::setKeyStats(int v) { if (v != keyStats()) { m_settings.setValue("keys/stats", v); emit keyBindingsChanged(); } }
-int SettingsStore::keySpeedDown() const { return m_settings.value("keys/speedDown", 0x5b).toInt(); }
-void SettingsStore::setKeySpeedDown(int v) { if (v != keySpeedDown()) { m_settings.setValue("keys/speedDown", v); emit keyBindingsChanged(); } }
-int SettingsStore::keySpeedUp() const { return m_settings.value("keys/speedUp", 0x5d).toInt(); }
-void SettingsStore::setKeySpeedUp(int v) { if (v != keySpeedUp()) { m_settings.setValue("keys/speedUp", v); emit keyBindingsChanged(); } }
-int SettingsStore::keyVolumeUp() const { return m_settings.value("keys/volumeUp", 0x01000015).toInt(); }
-void SettingsStore::setKeyVolumeUp(int v) { if (v != keyVolumeUp()) { m_settings.setValue("keys/volumeUp", v); emit keyBindingsChanged(); } }
-int SettingsStore::keyVolumeDown() const { return m_settings.value("keys/volumeDown", 0x01000013).toInt(); }
-void SettingsStore::setKeyVolumeDown(int v) { if (v != keyVolumeDown()) { m_settings.setValue("keys/volumeDown", v); emit keyBindingsChanged(); } }
+int SettingsStore::keySeekBackward() const { return m_keySeekBackward; }
+void SettingsStore::setKeySeekBackward(int v) { if (v != m_keySeekBackward) { m_keySeekBackward = v; m_settings.setValue("keys/seekBackward", v); emit keyBindingsChanged(); } }
+int SettingsStore::keySeekForward() const { return m_keySeekForward; }
+void SettingsStore::setKeySeekForward(int v) { if (v != m_keySeekForward) { m_keySeekForward = v; m_settings.setValue("keys/seekForward", v); emit keyBindingsChanged(); } }
+int SettingsStore::keyPlayPause() const { return m_keyPlayPause; }
+void SettingsStore::setKeyPlayPause(int v) { if (v != m_keyPlayPause) { m_keyPlayPause = v; m_settings.setValue("keys/playPause", v); emit keyBindingsChanged(); } }
+int SettingsStore::keyFullscreen() const { return m_keyFullscreen; }
+void SettingsStore::setKeyFullscreen(int v) { if (v != m_keyFullscreen) { m_keyFullscreen = v; m_settings.setValue("keys/fullscreen", v); emit keyBindingsChanged(); } }
+int SettingsStore::keyStats() const { return m_keyStats; }
+void SettingsStore::setKeyStats(int v) { if (v != m_keyStats) { m_keyStats = v; m_settings.setValue("keys/stats", v); emit keyBindingsChanged(); } }
+int SettingsStore::keySpeedDown() const { return m_keySpeedDown; }
+void SettingsStore::setKeySpeedDown(int v) { if (v != m_keySpeedDown) { m_keySpeedDown = v; m_settings.setValue("keys/speedDown", v); emit keyBindingsChanged(); } }
+int SettingsStore::keySpeedUp() const { return m_keySpeedUp; }
+void SettingsStore::setKeySpeedUp(int v) { if (v != m_keySpeedUp) { m_keySpeedUp = v; m_settings.setValue("keys/speedUp", v); emit keyBindingsChanged(); } }
+int SettingsStore::keyVolumeUp() const { return m_keyVolumeUp; }
+void SettingsStore::setKeyVolumeUp(int v) { if (v != m_keyVolumeUp) { m_keyVolumeUp = v; m_settings.setValue("keys/volumeUp", v); emit keyBindingsChanged(); } }
+int SettingsStore::keyVolumeDown() const { return m_keyVolumeDown; }
+void SettingsStore::setKeyVolumeDown(int v) { if (v != m_keyVolumeDown) { m_keyVolumeDown = v; m_settings.setValue("keys/volumeDown", v); emit keyBindingsChanged(); } }
 
 bool SettingsStore::skipSslVerify() const {
     return m_settings.value("network/skipSslVerify", false).toBool();
@@ -266,4 +277,17 @@ void SettingsStore::saveLogin(const QString &server, const QString &username,
     setEmbyUsername(username);
     setEmbyToken(token);
     setEmbyUserId(userId);
+}
+
+void SettingsStore::reloadKeyBindings() {
+    m_keySeekBackward = m_settings.value("keys/seekBackward", 0x01000012).toInt();
+    m_keySeekForward = m_settings.value("keys/seekForward", 0x01000014).toInt();
+    m_keyPlayPause = m_settings.value("keys/playPause", 0x20).toInt();
+    m_keyFullscreen = m_settings.value("keys/fullscreen", 0x46).toInt();
+    m_keyStats = m_settings.value("keys/stats", 0x49).toInt();
+    m_keySpeedDown = m_settings.value("keys/speedDown", 0x5b).toInt();
+    m_keySpeedUp = m_settings.value("keys/speedUp", 0x5d).toInt();
+    m_keyVolumeUp = m_settings.value("keys/volumeUp", 0x01000015).toInt();
+    m_keyVolumeDown = m_settings.value("keys/volumeDown", 0x01000013).toInt();
+    emit keyBindingsChanged();
 }

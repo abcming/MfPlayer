@@ -1,7 +1,7 @@
 # MfPlayer — AI 开发速查
 
 > **技术栈**: Qt 6.11 QML + C++23, libmpv (gpu-next fork), Emby REST API, libcurl
-> **最后更新**: 2026-06-04
+> **最后更新**: 2026-06-23
 
 ---
 
@@ -10,24 +10,23 @@
 ```
 common/         → 纯常量，零依赖
 core/network/   → CurlEngine (libcurl multi 接口，主线程非阻塞)
-core/providers/ → EmbyClient (REST 全覆盖，上帝类，先别拆)
+core/providers/ → EmbyClient (REST 全覆盖，上帝类，先别拆，每次会话生成独立 DeviceId)
 core/cache/     → CacheStore (内存缓存, 主线程) + DBWorker (SQLite, 独立线程) + ImageCacheProvider
 core/media/     → MediaModel (QAbstractListModel, 17 roles, O(1) lookup)
 core/settings/  → SettingsStore (QSettings wrapper, 27 属性, 也不拆)
 core/server/    → ServerManager (多服务器管理, 持有其他所有 core 对象) + CredentialStore
 core/playback/  → PlaybackController (播放编排: Emby→mpv 桥接)
 core/library/   → LibraryBrowser (15 个 MediaModel, 浏览/搜索/收藏/分页)
-core/detail/    → DetailManager (详情页数据, 6 个 MediaModel)
+core/detail/    → DetailManager (详情页数据, 6 个 MediaModel, 支持剧集/季选择状态保持)
 platform/rendering/mpv/
     mpvcontroller → libmpv C API 包装, 渲染上下文管理
     mpvrenderitem → QQuickItem + QSGRenderNode, 三后端渲染 (D3D11/Vk/GL)
-ui/providers/   → ImageCacheProvider（IconProvider 已删除，死代码）
 ui/qml/
     theme/      → Theme/Str/Nav (Singleton)
     pages/      → Main/Browse/Detail/Player
-    views/      → HomeView/LibraryGridView/PlayerControls/DebugOverlay...
-    components/ → HdrPqOverlay/CachedImage/RoundedImage/TrackSelector...
-    shaders/    → hdr_pq.frag (sRGB→PQ), roundedmask.frag
+    views/      → HomeView/LibraryGridView/PlayerControls/DebugOverlay/SuggestionsView
+    components/ → HdrPqOverlay/CachedImage/RoundedImage/TrackSelector/SeriesSection...
+    shaders/    → hdr_pq.frag/hdr_pq.vert (sRGB→PQ), roundedmask.frag
 ```
 
 ## 运行时对象树 (main.cpp 构造 & 所有权)
@@ -58,12 +57,16 @@ DetailManager (&app)          ← 同上, 裸指针
 
 ## QML ↔ C++ 桥接
 
-5 个 context property (setContextProperty):
+9 个 context property (setContextProperty):
 - `Playback` (PlaybackController) — 包含嵌套 `Playback.mpv` (MpvController)
 - `Library` (LibraryBrowser) — 30 个 Q_PROPERTY, 15 个 MediaModel
 - `Detail` (DetailManager) — 7 个 Q_PROPERTY, 6 个 MediaModel
 - `Server` (ServerManager) — 嵌套 `Server.settings` + `Server.emby` + `Server.cache`
-- `_hdrActive` (bool), `_appDir`, `_appVersion`, `_qtVersion`, `_startupFile`
+- `_appDir` — 应用程序可执行文件路径 (字体等相对路径解析)
+- `_appVersion` — "MfPlayer vX.Y.Z"
+- `_qtVersion` — Qt 编译版本号字符串
+- `_startupFile` — "Open with" 传入的文件路径
+- `_hdrActive` (bool) — 启动 300ms 后动态设置，swapchain 预热后才能检测
 
 qmlRegisterType: 只有 `MpvRenderItem`。
 
@@ -109,7 +112,7 @@ QML: Playback.playItem(id, ticks)
 
 ```
 视频帧 (mpv) → libplacebo → target-trc=pq → HDR10 swapchain (R10G10B10A2) → 显示器
-QML UI (sRGB) → RGBA16F FBO → hdr_pq.frag shader (sRGB→Rec.709→Rec.2020→PQ) → 同一 swapchain
+QML UI (sRGB) → RGBA16F FBO → hdr_pq.vert + hdr_pq.frag (sRGB→Rec.709→Rec.2020→PQ) → 同一 swapchain
 ```
 
 - mpv 和 UI 共用同一个 HDR10 swapchain，两条并行管线
@@ -117,11 +120,14 @@ QML UI (sRGB) → RGBA16F FBO → hdr_pq.frag shader (sRGB→Rec.709→Rec.2020�
 - 启动时 Main.qml 有黑色遮罩层 (`hdrStartupCover`) 防过曝，检测完成后淡出
 - SDR 系统自动回退: `_hdrActive=false` → `layer.enabled=false` → 零 shader 开销
 - hdr_pq.frag 刻意不 unpremultiply alpha (避免 ClearType 子像素偏色)
+- hdr_pq.vert 负责处理全屏三角形顶点变换，与 frag 配对使用
+- `compile_hdr_shaders.bat` 用于 Windows 下着色器预编译
 
 ## 异步安全机制
 
 | 机制 | 用途 | 位置 |
 |------|------|------|
+| `m_searchDebounceTimer` + `m_pendingSearchTerm` | 300ms 搜索防抖，批量按键合并为一次 API 调用 | LibraryBrowser |
 | 代计数器 generation | 取消过期异步回调 | PlaybackController (`m_playGeneration`), ServerManager, CacheStore (`m_writeGeneration`) |
 | QPointer 守卫 | 回调前检查对象存活 | EmbyClient 全部 50+ 回调, CacheStore, CurlEngine, DBWorker |
 | `m_reauthing` | 防递归 re-auth | ServerManager |
@@ -147,6 +153,7 @@ DB Worker 线程: DBWorker::putItems(args...)
 - **写入**: 主线程更新内存缓存 → 投递 DB Worker → 完成
 - **读取**: 主线程查内存缓存 (无锁) → 命中返回; 未命中查主线程 SQLite 只读连接
 - **启动**: DB Worker 异步打开数据库, UI 在初始化完成前就显示
+- **WAL 模式**: CacheStore 初始化时设 `PRAGMA journal_mode=WAL`，防止主线程读 + DBWorker 写并发时产生 SQLITE_BUSY
 - `resolveImagePath()` 不再做 stat() — 信任 loadImageCache() 已验证的文件
 
 ## I/O Pool 用法

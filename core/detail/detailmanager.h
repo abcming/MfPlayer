@@ -66,4 +66,7 @@ private:
     QString m_currentSeasonId;
     QVariantMap m_nextEpisode;
     QHash<QString, QJsonArray> m_similarCache;
+    QList<QString> m_similarCacheLru;
+
+    static const int kMaxSimilarCacheEntries = 30;
 };

@@ -60,7 +60,10 @@ QHash<int, QByteArray> MediaModel::roleNames() const {
 }
 
 void MediaModel::setItems(const QJsonArray &items) {
-    if (items == m_lastSourceJson) return;
+    if (items.size() == m_lastSourceJson.size()
+        && (items.isEmpty() || items.first().toObject().value("Id").toString()
+            == m_lastSourceJson.first().toObject().value("Id").toString()))
+        return;
     m_lastSourceJson = items;
     beginResetModel();
     m_items.clear();

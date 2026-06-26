@@ -63,43 +63,14 @@ void DBWorker::init() {
         emit dbError("Failed to open database: " + m_db.lastError().text());
         return;
     }
-    initTables();
+    // DDL (CREATE TABLE IF NOT EXISTS) is handled by CacheStore::init() on the
+    // main thread, which runs before DBWorker starts.  Just ensure WAL mode for
+    // this connection.
+    {
+        QSqlQuery pragma(m_db);
+        pragma.exec("PRAGMA journal_mode=WAL");
+    }
     emit ready();
-}
-
-void DBWorker::initTables() {
-    QSqlQuery q(m_db);
-    q.exec("CREATE TABLE IF NOT EXISTS items ("
-           "parent_id TEXT, item_id TEXT, type TEXT, name TEXT, year INT, "
-           "overview TEXT, image_url TEXT, image_path TEXT, "
-           "parent_series_id TEXT, index_number INT, child_count INT, "
-           "sort_order INT, fetched_at INTEGER, sort_name TEXT, "
-           "PRIMARY KEY (parent_id, item_id))");
-    q.exec("SELECT sort_name FROM items LIMIT 0");
-    if (q.lastError().isValid())
-        q.exec("ALTER TABLE items ADD COLUMN sort_name TEXT");
-    q.exec("CREATE TABLE IF NOT EXISTS item_detail ("
-           "item_id TEXT PRIMARY KEY, data TEXT, fetched_at INTEGER)");
-    q.exec("CREATE TABLE IF NOT EXISTS seasons ("
-           "series_id TEXT, season_id TEXT, name TEXT, year INT, "
-           "image_url TEXT, image_path TEXT, index_number INT, "
-           "fetched_at INTEGER, PRIMARY KEY (series_id, season_id))");
-    q.exec("CREATE TABLE IF NOT EXISTS images ("
-           "url_hash TEXT PRIMARY KEY, file_path TEXT, fetched_at INTEGER)");
-    q.exec("CREATE TABLE IF NOT EXISTS episodes ("
-           "series_id TEXT, season_id TEXT, data TEXT, fetched_at INTEGER, "
-           "PRIMARY KEY (series_id, season_id))");
-    q.exec("CREATE TABLE IF NOT EXISTS servers ("
-           "id INTEGER PRIMARY KEY AUTOINCREMENT, server_url TEXT NOT NULL, "
-           "username TEXT NOT NULL, password TEXT NOT NULL, "
-           "token TEXT DEFAULT '', user_id TEXT DEFAULT '', "
-           "is_active INTEGER DEFAULT 0, last_used TEXT)");
-
-    q.exec("CREATE INDEX IF NOT EXISTS idx_items_fetched ON items(fetched_at)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_detail_fetched ON item_detail(fetched_at)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_seasons_fetched ON seasons(fetched_at)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_images_fetched ON images(fetched_at)");
-    q.exec("CREATE INDEX IF NOT EXISTS idx_episodes_fetched ON episodes(fetched_at)");
 }
 
 bool DBWorker::isFresh(qint64 timestamp) const {
@@ -139,12 +110,6 @@ void DBWorker::putItems(const QString &parentId, const QJsonArray &items,
     }
     m_db.commit();
 
-    if (guard) {
-        QMetaObject::invokeMethod(guard, [guard, parentId, generation]() {
-            Q_UNUSED(generation);  // generation check done by caller before invoking this slot
-            // Signal emission is done by the caller connecting to itemsWritten
-        }, Qt::QueuedConnection);
-    }
     emit itemsWritten(parentId);
 }
 
@@ -239,11 +204,20 @@ void DBWorker::loadImageCache(QPointer<QObject> guard) {
     if (!stale.isEmpty()) {
         m_db.transaction();
         QSqlQuery del(m_db);
-        del.prepare("DELETE FROM images WHERE url_hash = ?");
-        for (const auto &h : stale) {
-            del.addBindValue(h);
+        const int batchSize = 500;
+        for (int i = 0; i < stale.size(); i += batchSize) {
+            int chunk = batchSize;
+            if (i + chunk > stale.size())
+                chunk = stale.size() - i;
+            QStringList placeholders;
+            placeholders.reserve(chunk);
+            for (int j = 0; j < chunk; ++j)
+                placeholders << "?";
+            del.prepare("DELETE FROM images WHERE url_hash IN ("
+                        + placeholders.join(",") + ")");
+            for (int j = 0; j < chunk; ++j)
+                del.addBindValue(stale[i + j]);
             del.exec();
-            del.finish();
         }
         m_db.commit();
     }
@@ -270,11 +244,20 @@ void DBWorker::removeStaleImages(const QStringList &urlHashes, QPointer<QObject>
     if (m_stopFlag || urlHashes.isEmpty()) return;
     m_db.transaction();
     QSqlQuery q(m_db);
-    q.prepare("DELETE FROM images WHERE url_hash = ?");
-    for (const auto &h : urlHashes) {
-        q.addBindValue(h);
+    const int batchSize = 500;
+    for (int i = 0; i < urlHashes.size(); i += batchSize) {
+        int chunk = batchSize;
+        if (i + chunk > urlHashes.size())
+            chunk = urlHashes.size() - i;
+        QStringList placeholders;
+        placeholders.reserve(chunk);
+        for (int j = 0; j < chunk; ++j)
+            placeholders << "?";
+        q.prepare("DELETE FROM images WHERE url_hash IN ("
+                  + placeholders.join(",") + ")");
+        for (int j = 0; j < chunk; ++j)
+            q.addBindValue(urlHashes[i + j]);
         q.exec();
-        q.finish();
     }
     m_db.commit();
     if (guard)

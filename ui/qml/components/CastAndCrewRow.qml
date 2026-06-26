@@ -49,6 +49,7 @@ Column {
                     width: parent.width
                     height: 168
                     imgRadius: 6
+                    lazyLoad: true
                     embyUrl: {
                         var pid = modelData.Id || ""
                         var tag = modelData.PrimaryImageTag || ""

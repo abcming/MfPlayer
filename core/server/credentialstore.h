@@ -22,4 +22,6 @@ public:
 
 private:
     QSqlDatabase m_db;
+    QJsonArray m_serverListCache;   // cached result of getServers() — main-thread only
+    bool m_cacheDirty = true;       // invalidated by any mutating operation
 };

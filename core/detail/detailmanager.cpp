@@ -37,6 +37,13 @@ DetailManager::DetailManager(EmbyClient *emby, CacheStore *cache, QObject *paren
     });
 
     connect(m_emby, &EmbyClient::similarFetched, this, [this](const QJsonArray &items, const QString &excludeId) {
+        if (!m_similarCache.contains(excludeId)) {
+            while (m_similarCache.size() >= kMaxSimilarCacheEntries && !m_similarCacheLru.isEmpty()) {
+                QString oldest = m_similarCacheLru.takeFirst();
+                m_similarCache.remove(oldest);
+            }
+            m_similarCacheLru.append(excludeId);
+        }
         m_similarCache[excludeId] = items;
         if (excludeId == m_browsingItemId)
             m_similarModel->setItems(items);
@@ -218,6 +225,7 @@ void DetailManager::clearAll() {
     m_personMoviesModel->clear();
     m_personSeriesModel->clear();
     m_similarCache.clear();
+    m_similarCacheLru.clear();
     m_browsingItemId.clear();
     m_currentSeriesId.clear();
     m_currentSeasonId.clear();

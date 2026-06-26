@@ -1,6 +1,7 @@
 #include "core/library/librarybrowser.h"
 #include "core/media/models/mediamodel.h"
 #include "common/constants.h"
+#include <QSet>
 #include <QTimer>
 
 LibraryBrowser::LibraryBrowser(EmbyClient *emby, CacheStore *cache, QObject *parent)
@@ -289,21 +290,35 @@ void LibraryBrowser::fetchHome() {
     m_emby->fetchItemCounts();
     m_emby->fetchResume(12);
 
-    // Clean up old per-library models
-    for (auto it = m_latestModels.begin(); it != m_latestModels.end(); ++it)
-        delete it.value();
-    m_latestModels.clear();
-
     int count = m_libraryModel->rowCount();
     m_pendingLatestSections = count;
+
+    // Collect current library IDs
+    QSet<QString> currentLibIds;
+    for (int i = 0; i < count; ++i) {
+        QVariantMap lib = m_libraryModel->get(i);
+        currentLibIds.insert(lib["itemId"].toString());
+    }
+
+    // Delete models for libraries that no longer exist; clear the rest for reuse
+    for (auto it = m_latestModels.begin(); it != m_latestModels.end(); ) {
+        if (!currentLibIds.contains(it.key())) {
+            delete it.value();
+            it = m_latestModels.erase(it);
+        } else {
+            it.value()->clear();
+            ++it;
+        }
+    }
 
     for (int i = 0; i < count; ++i) {
         QVariantMap lib = m_libraryModel->get(i);
         QString libId = lib["itemId"].toString();
         QString libType = lib["itemType"].toString();
 
-        auto *model = new MediaModel(this);
-        m_latestModels[libId] = model;
+        // Reuse existing model, or create a new one only if missing
+        if (!m_latestModels.contains(libId))
+            m_latestModels[libId] = new MediaModel(this);
 
         QString types = (libType == "CollectionFolder") ? "Movie,Series" : "Movie,Series";
         m_emby->fetchLatest(12, libId, types, libId);

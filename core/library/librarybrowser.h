@@ -140,7 +140,7 @@ private:
     MediaModel *m_suggestionsLatestModel;
     int m_currentTab = 0;
     QString m_browseContext;
-    QMap<QString, MediaModel *> m_latestModels;
+    QHash<QString, MediaModel *> m_latestModels;
     int m_pendingLatestSections = 0;
     QString m_currentLibraryId;
     QHash<QString, QString> m_libraryTypes;

@@ -5,9 +5,6 @@
 #include <QSqlDatabase>
 #include <QSet>
 #include <memory>
-#include <thread>
-#include <vector>
-#include <atomic>
 
 class CurlEngine;
 class DBWorker;
@@ -83,6 +80,4 @@ private:
     QList<QPair<QString, int>> m_downloadQueue;
     static const int kMaxActiveDownloads = 8;
     uint32_t m_writeGeneration = 0;  // incremented by clearContentCache to cancel deferred writes
-    std::vector<std::thread> m_workerThreads;  // image download validation+write
-    std::atomic<bool> m_stopFlag{false};
 };

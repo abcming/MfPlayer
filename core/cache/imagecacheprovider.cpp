@@ -85,7 +85,11 @@ void ImageCacheResponse::process() {
 QQuickTextureFactory *ImageCacheResponse::textureFactory() const {
     // No mutex needed: m_pixmap is set before finished() is emitted,
     // and Qt only calls textureFactory() after finished().
-    return QQuickTextureFactory::textureFactoryForImage(m_pixmap.toImage());
+    // Cache the QImage to avoid repeated QPixmap::toImage() conversions
+    // (each conversion is a ~1.5MB memcpy for a 500x750 thumbnail).
+    if (m_cachedImage.isNull())
+        m_cachedImage = m_pixmap.toImage();
+    return QQuickTextureFactory::textureFactoryForImage(m_cachedImage);
 }
 
 // ── Async image provider ──────────────────────────────────────────
