@@ -58,7 +58,7 @@ DetailManager (&app)          ← 同上, 裸指针
 ## QML ↔ C++ 桥接
 
 9 个 context property (setContextProperty):
-- `Playback` (PlaybackController) — 包含嵌套 `Playback.mpv` (MpvController)
+- `Playback` (PlaybackController) — 嵌套 `Playback.mpv` (MpvController, 仅诊断/渲染直连, 业务走 Playback 转发)
 - `Library` (LibraryBrowser) — 30 个 Q_PROPERTY, 15 个 MediaModel
 - `Detail` (DetailManager) — 7 个 Q_PROPERTY, 6 个 MediaModel
 - `Server` (ServerManager) — 嵌套 `Server.settings` + `Server.emby` + `Server.cache`
@@ -203,11 +203,17 @@ ioPool().start([guard, ...]() {
 1. **上帝类**: EmbyClient (50+方法) / LibraryBrowser (45+槽 15个Model) / SettingsStore (27属性)
    → 不拆分。EmbyClient 等第二个 provider 出现, LibraryBrowser 等下一个大功能, SettingsStore 永不需要。
 2. **裸指针传播**: EmbyClient*/CacheStore* 在 4 个类间共享, 所有权靠约定
-   → 不改。Qt parent-child 已保证生命周期正确。
+   → 不改。Qt parent-child 保证运行期安全。退出时序 UAF (children 按构造顺序析构,
+     serverMgr 先死 → ~PlaybackController 的 stop() 摸悬垂 m_emby/m_cache) 已修:
+     main.cpp 里 aboutToQuit → PlaybackController::stop, 上报发生在对象全部存活时 (2026-07)。
 3. **播放状态机不显式**: 状态散布在 m_hasVideo/m_playing/m_pendingStartSeconds 等 flag 中
-   → 待加播放队列/AB 循环时引入 PlayState enum。
-4. **Playback.mpv 泄露**: QML 绕过 PlaybackController 直接操作 MpvController
-   → 待加转发层时统一。
+   → 待加播放队列/AB 循环时引入 PlayState enum。实测散落密度低 (每个 flag 5-8 处),
+     现在引入只是给 flag 改名, 无功能收益。
+4. **Playback.mpv 泄露**: 业务部分已还 (2026-07)。speed/setSpeed/tracks/currentSid/
+   chapters/currentChapter/setSlang/setAlang/addSubtitleFile 经 PlaybackController 转发,
+   QML 业务代码用 `Playback.xxx`。`Playback.mpv` 仅保留诊断直连 (DebugOverlay 的
+   params/stats, toggleStats, mpvVersion) 和渲染直连 (PlayerPage `player: Playback.mpv`)
+   — 刻意保留, 不要"补全"转发。
 
 ## 构建与部署
 

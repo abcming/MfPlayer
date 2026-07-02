@@ -47,6 +47,11 @@ void PlaybackController::connectMpvSignals() {
     connect(m_mpv, &MpvController::volumeChanged, this, &PlaybackController::volumeChanged);
     connect(m_mpv, &MpvController::endOfFile, this, &PlaybackController::endOfFile);
     connect(m_mpv, &MpvController::errorOccurred, this, &PlaybackController::playError);
+    connect(m_mpv, &MpvController::speedChanged, this, &PlaybackController::speedChanged);
+    connect(m_mpv, &MpvController::tracksChanged, this, &PlaybackController::tracksChanged);
+    connect(m_mpv, &MpvController::sidChanged, this, &PlaybackController::sidChanged);
+    connect(m_mpv, &MpvController::chaptersChanged, this, &PlaybackController::chaptersChanged);
+    connect(m_mpv, &MpvController::chapterChanged, this, &PlaybackController::chapterChanged);
 
     // Load external subtitles after file is ready
     connect(m_mpv, &MpvController::fileLoaded, this, [this]() {

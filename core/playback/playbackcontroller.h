@@ -19,6 +19,11 @@ class PlaybackController : public QObject {
     Q_PROPERTY(bool fullscreen READ fullscreen NOTIFY fullscreenChanged FINAL)
     Q_PROPERTY(MpvController* mpv READ mpv CONSTANT)
     Q_PROPERTY(QJsonObject currentItemDetail READ currentItemDetail NOTIFY currentItemDetailChanged FINAL)
+    Q_PROPERTY(double speed READ speed NOTIFY speedChanged FINAL)
+    Q_PROPERTY(QVariantList tracks READ tracks NOTIFY tracksChanged FINAL)
+    Q_PROPERTY(int currentSid READ currentSid NOTIFY sidChanged FINAL)
+    Q_PROPERTY(QVariantList chapters READ chapters NOTIFY chaptersChanged FINAL)
+    Q_PROPERTY(int currentChapter READ currentChapter NOTIFY chapterChanged FINAL)
 
 public:
     explicit PlaybackController(EmbyClient *emby, CacheStore *cache, SettingsStore *settings, QObject *parent = nullptr);
@@ -31,6 +36,11 @@ public:
     bool fullscreen() const;
     MpvController *mpv() const { return m_mpv; }
     QJsonObject currentItemDetail() const { return m_currentItemDetail; }
+    double speed() const { return m_mpv->speed(); }
+    QVariantList tracks() const { return m_mpv->tracks(); }
+    int currentSid() const { return m_mpv->currentSid(); }
+    QVariantList chapters() const { return m_mpv->chapters(); }
+    int currentChapter() const { return m_mpv->currentChapter(); }
 
 public slots:
     void playItem(const QString &itemId, qint64 startTimeTicks = 0,
@@ -48,6 +58,13 @@ public slots:
     Q_INVOKABLE void setSid(int sid) { m_mpv->setSid(sid); }
     Q_INVOKABLE void setAid(int aid) { m_mpv->setAid(aid); }
     Q_INVOKABLE void setChapter(int ch) { m_mpv->setChapter(ch); }
+    Q_INVOKABLE void setSpeed(double speed) { m_mpv->setSpeed(speed); }
+    Q_INVOKABLE void setSlang(const QString &lang) { m_mpv->setSlang(lang); }
+    Q_INVOKABLE void setAlang(const QString &lang) { m_mpv->setAlang(lang); }
+    Q_INVOKABLE void addSubtitleFile(const QString &url,
+                                      const QString &title = QString(),
+                                      const QString &lang = QString(),
+                                      bool select = true) { m_mpv->addSubtitleFile(url, title, lang, select); }
     Q_INVOKABLE void reportPlayStopped(qint64 ticks) { m_emby->reportPlaybackStop(m_currentPlayItemId, ticks); }
     Q_INVOKABLE void toggleFullscreen();
     void setRootWindow(QWindow *window);
@@ -63,6 +80,11 @@ signals:
     void resumeProgressUpdated();
     void localPlaylistReady(QVariantList playlist);
     void currentItemDetailChanged();
+    void speedChanged();
+    void tracksChanged();
+    void sidChanged();
+    void chaptersChanged();
+    void chapterChanged();
 
 private:
     void connectMpvSignals();

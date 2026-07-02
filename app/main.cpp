@@ -107,6 +107,10 @@ int main(int argc, char *argv[]) {
     QObject::connect(serverMgr, &ServerManager::loggedOut, detailMgr, &DetailManager::clearAll);
     QObject::connect(serverMgr, &ServerManager::librariesReady, libraryBrowser, &LibraryBrowser::onLibrariesFetched);
     QObject::connect(playbackCtrl, &PlaybackController::resumeProgressUpdated, libraryBrowser, &LibraryBrowser::refreshResume);
+    // 退出时先在所有对象存活期间上报并停止播放。QObject children 按构造顺序析构，
+    // serverMgr (EmbyClient/CacheStore) 先于 playbackCtrl 死亡 —— 若播放中退出,
+    // ~PlaybackController 里的 stop() 会经悬垂指针调用 m_emby/m_cache。
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, playbackCtrl, &PlaybackController::stop);
 
     qmlEngine.rootContext()->setContextProperty("Playback", playbackCtrl);
     qmlEngine.rootContext()->setContextProperty("Library", libraryBrowser);

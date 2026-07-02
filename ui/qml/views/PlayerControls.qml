@@ -108,7 +108,7 @@ Rectangle {
             property bool _snapping: false
 
             function snapToChapter(val) {
-                var chapters = Playback.mpv.chapters || []
+                var chapters = Playback.chapters || []
                 if (chapters.length === 0) return val
                 var dur = Playback.duration || 1
                 var snapDist = Math.max(dur * 0.005, 3)
@@ -195,7 +195,7 @@ Rectangle {
 
                 // Chapter markers — vertical ticks on the bar
                 Repeater {
-                    model: Playback.mpv.chapters || []
+                    model: Playback.chapters || []
                     Rectangle {
                         required property var modelData
                         required property int index
@@ -314,7 +314,7 @@ Rectangle {
                     flat: true
                     implicitWidth: 44; implicitHeight: 36
 
-                    property double current: Playback.mpv.speed || 1.0
+                    property double current: Playback.speed || 1.0
 
                     onClicked: speedPopup.open()
 
@@ -372,9 +372,9 @@ Rectangle {
                                         return modelData + "x"
                                     }
                                     color: parent.parent.hovered ? Theme.primary
-                                           : (modelData === (Playback.mpv.speed || 1.0) ? Theme.primary : Theme.textSecondary)
+                                           : (modelData === (Playback.speed || 1.0) ? Theme.primary : Theme.textSecondary)
                                     font.pixelSize: 13
-                                    font.bold: modelData === (Playback.mpv.speed || 1.0)
+                                    font.bold: modelData === (Playback.speed || 1.0)
                                     Layout.fillWidth: true
                                 }
 
@@ -382,7 +382,7 @@ Rectangle {
                                     name: "check"
                                     color: Theme.primary
                                     size: 16
-                                    visible: modelData === (Playback.mpv.speed || 1.0)
+                                    visible: modelData === (Playback.speed || 1.0)
                                 }
                             }
 
@@ -392,7 +392,7 @@ Rectangle {
                             }
 
                             onClicked: {
-                                Playback.mpv.setSpeed(modelData)
+                                Playback.setSpeed(modelData)
                                 speedPopup.close()
                             }
                         }

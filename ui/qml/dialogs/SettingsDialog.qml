@@ -197,7 +197,7 @@ StyledPopup {
                                                     Icon { name: "check"; color: Theme.primary; size: 16; visible: modelData.code === Server.settings.audioLanguage }
                                                 }
                                                 background: Rectangle { radius: 4; color: parent.hovered ? Theme.active : "transparent" }
-                                                onClicked: { Server.settings.audioLanguage = modelData.code; if (Playback.mpv && Playback.playing) Playback.mpv.setAlang(modelData.code); _aLangPopup.close() }
+                                                onClicked: { Server.settings.audioLanguage = modelData.code; if (Playback.playing) Playback.setAlang(modelData.code); _aLangPopup.close() }
                                             }
                                         }
                                     }
@@ -227,7 +227,7 @@ StyledPopup {
                                                     Icon { name: "check"; color: Theme.primary; size: 16; visible: modelData.code === Server.settings.subtitleLanguage }
                                                 }
                                                 background: Rectangle { radius: 4; color: parent.hovered ? Theme.active : "transparent" }
-                                                onClicked: { Server.settings.subtitleLanguage = modelData.code; if (Playback.mpv && Playback.playing) Playback.mpv.setSlang(modelData.code); _sLangPopup.close() }
+                                                onClicked: { Server.settings.subtitleLanguage = modelData.code; if (Playback.playing) Playback.setSlang(modelData.code); _sLangPopup.close() }
                                             }
                                         }
                                     }

@@ -113,9 +113,9 @@ Item {
 
     // ── Derived models ──
     property var subtitleModel: {
-        void Playback.mpv.tracks  // explicit dependency: re-evaluate when tracks change
-        var tracks = Playback.mpv.tracks || []
-        var subs = [{id: -2, title: Str.trackOff, lang: "", selected: Playback.mpv.currentSid === -2}]
+        void Playback.tracks  // explicit dependency: re-evaluate when tracks change
+        var tracks = Playback.tracks || []
+        var subs = [{id: -2, title: Str.trackOff, lang: "", selected: Playback.currentSid === -2}]
         for (var i = 0; i < tracks.length; i++) {
             if (tracks[i].type === "sub") {
                 if (tracks[i].selected) subs[0].selected = false
@@ -126,7 +126,7 @@ Item {
     }
 
     property var audioModel: {
-        var tracks = Playback.mpv.tracks || []
+        var tracks = Playback.tracks || []
         var audios = []
         for (var i = 0; i < tracks.length; i++) {
             if (tracks[i].type === "audio") audios.push(tracks[i])
@@ -492,7 +492,7 @@ Item {
             Button {
                 focusPolicy: Qt.NoFocus
                 id: chapterBtn
-                visible: (Playback.mpv.chapters || []).length > 1
+                visible: (Playback.chapters || []).length > 1
                 flat: true
                 width: 36; height: 36
 
@@ -520,7 +520,7 @@ Item {
                 ListView {
                     anchors.fill: parent
                     implicitHeight: Math.min(contentHeight, 300)
-                    model: Playback.mpv.chapters || []
+                    model: Playback.chapters || []
                     clip: true
                     spacing: 2
 
@@ -544,14 +544,14 @@ Item {
                                         ? (h + ":" + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s)
                                         : (m + ":" + (s < 10 ? "0" : "") + s)
                                 }
-                                color: index === Playback.mpv.currentChapter ? Theme.primary : Theme.textMuted
+                                color: index === Playback.currentChapter ? Theme.primary : Theme.textMuted
                                 font.pixelSize: 11
                                 Layout.preferredWidth: 55
                             }
 
                             Label {
                                 text: modelData.title || (Str.playerChapterPrefix + (index + 1))
-                                color: index === Playback.mpv.currentChapter ? Theme.textPrimary
+                                color: index === Playback.currentChapter ? Theme.textPrimary
                                        : (parent.parent.hovered ? Theme.primary : Theme.textSecondary)
                                 font.pixelSize: 12
                                 Layout.fillWidth: true
@@ -561,7 +561,7 @@ Item {
 
                         background: Rectangle {
                             radius: 4
-                            color: index === Playback.mpv.currentChapter ? Theme.active
+                            color: index === Playback.currentChapter ? Theme.active
                                    : (parent.hovered ? Theme.activeHover : "transparent")
                         }
 
@@ -760,15 +760,15 @@ Item {
             event.accepted = true
         } else if (k === s.keySpeedDown) {
             var speeds = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0]
-            var cur = Playback.mpv.speed || 1.0
+            var cur = Playback.speed || 1.0
             var idx = speeds.indexOf(cur)
-            Playback.mpv.setSpeed(speeds[Math.max(0, idx - 1)])
+            Playback.setSpeed(speeds[Math.max(0, idx - 1)])
             event.accepted = true
         } else if (k === s.keySpeedUp) {
             var speeds2 = [0.5, 1.0, 1.25, 1.5, 2.0, 3.0]
-            var cur2 = Playback.mpv.speed || 1.0
+            var cur2 = Playback.speed || 1.0
             var idx2 = speeds2.indexOf(cur2)
-            Playback.mpv.setSpeed(speeds2[Math.min(speeds2.length - 1, idx2 + 1)])
+            Playback.setSpeed(speeds2[Math.min(speeds2.length - 1, idx2 + 1)])
             event.accepted = true
         } else if (k === s.keyVolumeUp) {
             Playback.setVolume(Math.min(100, Playback.volume + 5))
@@ -833,7 +833,7 @@ Item {
                 var ext = path.split('.').pop().toLowerCase()
                 if (subExts.indexOf(ext) >= 0) {
                     var fileName = path.split('/').pop().split('\\').pop()
-                    Playback.mpv.addSubtitleFile("file://" + path, fileName, "")
+                    Playback.addSubtitleFile("file://" + path, fileName, "")
                 }
             }
         }
