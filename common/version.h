@@ -1,5 +1,5 @@
 #pragma once
 
 #define MFPLAYER_APP_NAME    "MfPlayer"
-#define MFPLAYER_VERSION     "1.2.1"
+#define MFPLAYER_VERSION     "1.2.2"
 #define MFPLAYER_USER_AGENT  MFPLAYER_APP_NAME "/" MFPLAYER_VERSION
