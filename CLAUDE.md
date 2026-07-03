@@ -78,7 +78,7 @@ ImageProvider: `image://imgcache/` → ImageCacheProvider → CacheStore。
 QML: Playback.playItem(id, ticks)
   → PlaybackController: cache lookup → ++m_playGeneration (防竞态)
   → EmbyClient::fetchPlaybackInfo (网络, CurlEngine 主线程驱动)
-  → EmbyClient::reportPlaybackStart (网络)
+  → EmbyClient::reportPlaybackStart (网络, fire-and-forget, 与 loadfile 并行不阻塞起播)
   → MpvController::play(url) → mpv_command_async("loadfile")
   → [mpv 内部: 下载→解封装→解码]
   → wakeup() → QueuedConnection → onMpvEvents() [主线程]
@@ -95,7 +95,7 @@ QML: Playback.playItem(id, ticks)
 | **主线程** | QML, CurlEngine::tick(), 内存缓存(HashMap, 无锁), 信号槽 | 默认运行域 |
 | **DB Worker** (1 线程) | 所有 SQLite 写入+维护 (putItems, expire, clear, CredentialStore) | QueuedConnection slot 调用, 信号回主线程 |
 | **I/O Pool** (2-4 线程) | 文件 stat, QSettings 延迟写, 目录枚举 | QThreadPool QRunnable, QMetaObject::invoke 回主线程 |
-| **CPU Pool** (=CPU 核数) | 图片解码 (QImageReader), 大 JSON 解析 | QThreadPool::globalInstance() |
+| **CPU Pool** (=CPU 核数) | 图片解码 (ImageCacheResponse::process) | QThreadPool::globalInstance() |
 | **Qt 渲染线程** | VideoRenderNode::prepare/render | s_renderMutex → s_stateMutex 保护 |
 | **mpv 内部线程** | demux/decode/render | 仅通过 QueuedConnection 投递到主线程 |
 | **libcurl 内部** | DNS/TLS | 回调在 CurlEngine::tick() 中主线程同步执行 |
@@ -128,7 +128,7 @@ QML UI (sRGB) → RGBA16F FBO → hdr_pq.vert + hdr_pq.frag (sRGB→Rec.709→Re
 | 机制 | 用途 | 位置 |
 |------|------|------|
 | `m_searchDebounceTimer` + `m_pendingSearchTerm` | 300ms 搜索防抖，批量按键合并为一次 API 调用 | LibraryBrowser |
-| 代计数器 generation | 取消过期异步回调 | PlaybackController (`m_playGeneration`), ServerManager, CacheStore (`m_writeGeneration`) |
+| 代计数器 generation | 取消过期异步回调 | PlaybackController (`m_playGeneration`), ServerManager, CacheStore (`m_writeGeneration`), LibraryBrowser (`m_browseGeneration`, 丢弃列表切换后飞行中的旧分页批次) |
 | QPointer 守卫 | 回调前检查对象存活 | EmbyClient 全部 50+ 回调, CacheStore, CurlEngine, DBWorker |
 | `m_reauthing` | 防递归 re-auth | ServerManager |
 | `m_pendingDownloads` set | 防重复下载 | CacheStore |
@@ -223,7 +223,6 @@ cmake -G Ninja -S /root/myproject/mfplayer -B /root/myproject/mfplayer/build
 cmake --build /root/myproject/mfplayer/build
 
 # 注意: mpv 使用 fork 版本 (d3d11-render-api 分支), 不是上游
-# Vulkan 路径依赖 Qt 私有头文件 (QVkSwapChain) — Qt 版本升级时需要验证
 # OpenGL 后端有 Y-flip blit (gpu-next 不支持 FLIP_Y)
 ```
 
@@ -236,16 +235,35 @@ cmake --build /root/myproject/mfplayer/build
 - **改 DBWorker** → 它运行在独立线程, 只通过 QueuedConnection 与主线程通信。不要从主线程直接访问它的 QSqlDatabase
 - **改用 I/O Pool** → 文件 I/O 操作通过 `ioPool().start()` 提交。回调必须用 QPointer 守卫 + QueuedConnection
 - **性能红线 — 不要回退以下优化**:
-  - VideoRenderNode: OpenGL FBO+纹理跨帧缓存，Pause 3帧无变化跳过 render。别改回每帧 gen/delete
+  - VideoRenderNode（D3D11/OpenGL）: OpenGL FBO 跨帧缓存，mpv 无新帧时只跳过 mpv render、缓存内容照常 blit。别改回每帧 gen/delete；也别在 render() 里提前 return 跳过 blit——Qt 每帧清屏重画，少 blit 一次视频区就黑一帧（2026-07 闪屏 bug 根因）
+  - **Vulkan 路径架构（2026-07 第四轮定稿，前三轮全部翻车的教训都在这里）**：
+    - 宿主自建 VkDevice（platform/rendering/vulkandevice.cpp，main.cpp 经 setGraphicsDevice 交给 Qt）：支持什么 feature 开什么（仅关 robustness 两项），feature 链经 mpv_vulkan_init_params.enabled_features 原样告知 libplacebo。**根因铁律：libplacebo 对"并入核心"的扩展只看设备 apiVersion 就直接用（pl_vulkan_import context.c:1720），并入核心 ≠ feature 已启用——Qt 默认设备没开 synchronization2/pushDescriptor，用了就是 UB，NVIDIA 表现为随机 device lost**。别改回用 Qt 默认设备；若接管失败，dll 端 fallback 会 cap max_api_version=1.2 兜底（context.c init_vulkan），这两处 cap 逻辑别删
+    - 显示路径 = mpv 渲染进自有 VkImage + Qt 采样（VulkanVideoNode : QSGSimpleTextureNode，updatePaintNode 里跑 mpv render、fromNative 包纹理、每帧 setNativeLayout(out_layout)）。**别改回 blit 进 Qt 渲染目标**：QSGRenderNode::render() 在 Qt render pass 内部，vkCmdBlitImage/布局 barrier 在 pass 里非法（validation 实锤），且 Qt 的渲染目标没有 TRANSFER_DST usage
+    - 历史结论修正：2026-07 早前"跨 command buffer barrier 成链在 NVIDIA 不可行"的结论是在 sync2 未启用（每个 barrier2 调用都是 UB）的污染环境里得出的，不作数；规范上同队列跨 buffer 成链合法
+    - mpv fork 侧（third_party/mpv-source/video/out/gpu_next/context.c）：done_frame_vulkan 不调用 pl_gpu_finish()（渲染循环里"seriously disadvised"）；wrapped_tex 跨帧缓存 + persistent_target_tex 标记（libmpv_gpu_next.h/.c）别删；hold_ex out_layout 模式只查询不转换、经 mpv_vulkan_fbo.out_layout 回传；guard_sem 空提交防 WAR。改 render_vulkan.h 的结构体（out_layout/enabled_features 都是尾部追加）→ dll 和 exe 必须一起重编，头文件同步 cp 到 mpv-msvc/include
+    - 销毁 VkImage 前必须 vkDeviceWaitIdle（VulkanVideoNode::destroyImage，resize 和节点析构/场景图失效两条路都走它）——异步化后没有每帧排空兜底，2026-07 全屏切换 device lost 就是裸销毁炸的
+    - 三个后端调 mpv_render_context_render 都必须传 BLOCK_FOR_TARGET_TIME=0——缺省 1 会睡到该帧目标显示时刻，UI 被锁到视频帧率（2026-07 Vulkan"UI 跟着视频走"根因）
   - PlayerControls: progressSlider.value 只在 `_lastSecond` 变化时更新。别移回每帧赋值
   - CacheStore: updateItemFieldInCache 找到 item 直接 `return`。别删外层 return
   - resolveImagePath / fetchImage: 不做 `QFile::exists()`。别加回 stat
   - m_imageCache / m_pendingDownloads: 主线程独占，无 mutex。别加回 m_imageCacheMutex
-  - ImageCacheResponse: m_pixmap 无 mutex（时序保证：finished 前已赋值）。别加回 m_pixmapMutex
-  - QPixmap 用 std::move 插入 LRU（避免 mutex 内拷贝）。别改回拷贝
+  - ImageCacheResponse: m_image 无 mutex（时序保证：finished 前已赋值）。别加回 mutex
+  - 图片缓存全链路 QImage（textureFactoryForImage 直接吃，隐式共享零拷贝）。
+    别改回 QPixmap — 旧链路 QImage→QPixmap→toImage 每次请求多两次 ~1.5MB memcpy，缓存命中也逃不掉
+  - ImageCacheResponse 解码跑 QThreadPool::globalInstance()。别改回每请求一个裸 std::thread
+  - QImage 用 std::move 插入 LRU（避免 mutex 内拷贝）。别改回拷贝
+  - mpv hwdec=auto-safe（硬解优先、失败自动回落软解, 2026-07, DV P7.6 实测直通）。别改回 no — 4K HEVC/AV1 软解吃满 CPU
+  - playItem: reportPlaybackStart 是 fire-and-forget, play() 不等上报回执。别套回回调里 — 白等一个 RTT
+  - TabDefault 浏览: 首屏 kPageSize(200) 立即显示 + loadMore 自动渐进拉满（万部库全量 JSON 主线程解析是 100ms+ 卡顿）。
+    别改回无 limit 全量拉取。续拉走回调版 fetchItemsFiltered + m_browseGeneration 防竞态, 别改走 itemsFetched 分发
+  - MediaModel 去重指纹只存 size + firstId (m_lastSourceSize/m_lastSourceFirstId)。别改回持有整个源 QJsonArray
   - m_idToIndex: setItems/appendItems 前调 `reserve()`。别删
   - MediaModel: alphaIndex 通过 Q_PROPERTY 增量维护。别让 QML 每次遍历全部 item 重建
   - getAllItems: 直建 QVariantList 不用 per-row get()。别改回循环调用 get(i)
   - m_itemsCache: 有 LRU 上限。别删除限制让它无界增长
 - 不要新建 utils/helpers/common 文件 → 功能放回相关模块
 - 不要给现有代码加抽象层/接口/工厂 → 保持可直接追踪的调用路径
+- **CurlEngine 别改 socket-action 事件驱动** (2026-07 试过, 已回退): h2 multiplex pipe-wait
+  的排队传输会因 curl timerCallback 收到 -1/STOP 而事件断流, 干等到假超时 (实测 Emby 场景
+  "什么都加载不了"); Windows QSocketNotifier 的 FD_WRITE 边缘触发语义也未验证。
+  10ms 轮询每请求只多 ~5ms, 不值得再冒险

@@ -44,11 +44,14 @@ extern "C" {
  * Synchronization
  * ---------------
  *
- * The host application is responsible for ensuring the VkImage passed to
- * mpv_render_context_render() is in a suitable layout for rendering
- * (VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL or VK_IMAGE_LAYOUT_GENERAL).
- * The backend will transition the image as needed internally and leave it
- * in VK_IMAGE_LAYOUT_GENERAL when done.
+ * The backend treats the image contents as undefined on entry and
+ * transitions the image as needed internally; the caller does not need to
+ * pre-transition it. When mpv_render_context_render() returns, the layout
+ * the image was left in is reported in mpv_vulkan_fbo.out_layout. The
+ * backend performs no layout transition of its own after rendering — the
+ * caller is expected to transition from out_layout itself, in a command
+ * buffer of its own submitted after the render call on the shared queue,
+ * before consuming the image.
  *
  * Threading
  * ---------
@@ -107,6 +110,33 @@ typedef struct mpv_vulkan_init_params {
      * The index of the graphics queue within the above family.
      */
     uint32_t queue_index;
+
+    /**
+     * Optional. The feature chain the VkDevice was actually created with
+     * (VkDeviceCreateInfo::pNext), so libplacebo only uses what is truly
+     * enabled. "Promoted to core" does not mean "enabled": without this,
+     * libplacebo assumes any extension promoted at the device's apiVersion
+     * is usable (e.g. synchronization2, pushDescriptor) — undefined
+     * behavior if the device wasn't created with those features.
+     *
+     * May be NULL: libmpv then assumes only the libplacebo-required
+     * features and caps the API version at 1.2 so no promoted extension
+     * is used implicitly.
+     *
+     * ABI note: these three fields were appended to the struct; libmpv
+     * builds that read them must not be mixed with callers compiled
+     * against the older, shorter struct.
+     *
+     * Type: const VkPhysicalDeviceFeatures2 *
+     */
+    const void *enabled_features;
+
+    /**
+     * Optional. The extension names the VkDevice was created with
+     * (VkDeviceCreateInfo::ppEnabledExtensionNames). May be NULL.
+     */
+    const char *const *enabled_extensions;
+    uint32_t num_enabled_extensions;
 } mpv_vulkan_init_params;
 
 /**
@@ -141,6 +171,20 @@ typedef struct mpv_vulkan_fbo {
      * match the actual size of the image.
      */
     int w, h;
+
+    /**
+     * Written back by mpv_render_context_render(): the VkImageLayout the
+     * image is left in when the call returns. The caller must transition
+     * from this layout itself before consuming the image (see the
+     * Synchronization section above).
+     *
+     * ABI note: this field was appended to the struct; libmpv builds that
+     * write it must not be mixed with callers compiled against the older,
+     * shorter struct.
+     *
+     * Type: VkImageLayout
+     */
+    int out_layout;
 } mpv_vulkan_fbo;
 
 #ifdef __cplusplus

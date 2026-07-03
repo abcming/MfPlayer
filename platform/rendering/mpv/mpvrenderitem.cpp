@@ -9,9 +9,11 @@ extern "C" {
 #if __has_include(<mpv/render_vulkan.h>)
 #include <mpv/render_vulkan.h>
 #else
-// Fallback: mpv_vulkan_fbo struct (from render_vulkan.h)
+// Fallback: mpv_vulkan_fbo struct (from render_vulkan.h). Must match the
+// fork's header exactly — out_layout is written back by mpv (the layout the
+// image is left in after rendering).
 #define MPV_RENDER_PARAM_VULKAN_FBO ((mpv_render_param_type)25)
-struct mpv_vulkan_fbo { void *image; int format, usage; int w, h; };
+struct mpv_vulkan_fbo { void *image; int format, usage; int w, h; int out_layout; };
 #endif
 }
 
@@ -27,10 +29,10 @@ struct mpv_vulkan_fbo { void *image; int format, usage; int w, h; };
 #include <rhi/qrhi_platform.h>
 #if QT_CONFIG(vulkan)
 #include <vulkan/vulkan.h>
-#if __has_include(<private/qrhivulkan_p.h>)
-#include <private/qrhivulkan_p.h>
-#define MFPLAYER_HAS_VK_SWAPCHAIN_PRIVATE 1
-#endif
+#include <QVulkanInstance>
+#include <QVulkanFunctions>
+#include <QSGSimpleTextureNode>
+#include <QtQuick/qsgtexture_platform.h>
 #endif
 
 namespace {
@@ -46,6 +48,11 @@ struct VideoRenderState {
     mpv_render_context *renderCtx = nullptr;
     bool hasVideo = false;
     bool fboReady = false;
+    // True once mpv has rendered at least one frame into the cached offscreen
+    // target (offFbo); reset when the target is recreated. While true, a
+    // repaint with no new mpv frame can re-blit the cached content instead of
+    // re-running the full mpv render.
+    bool offValid = false;
     QSize nodeSize;
     MpvRenderItem *item = nullptr;
     // OpenGL cached offscreen FBO (avoids per-frame gen/delete, see #2)
@@ -57,10 +64,223 @@ struct VideoRenderState {
 QHash<VideoRenderNode *, VideoRenderState> s_state;
 QMutex s_stateMutex;
 
-// Frame-skip tracking for pause/idle optimization
-// Keyed by render node; maps to {lastRenderedSize, consecutiveStaleFrames}
-QHash<const VideoRenderNode *, QPair<QSize, int>> s_renderSkip;
-QMutex s_renderSkipMutex;
+#if QT_CONFIG(vulkan)
+// ── Vulkan render API backend ──
+//
+// mpv renders into a privately owned VkImage; Qt Quick then samples it as an
+// ordinary scene-graph texture. Everything runs in updatePaintNode() — on the
+// render thread with the GUI thread blocked, outside Qt's render pass — so
+// mpv's own queue submissions are serialized against Qt's without locking,
+// and no commands are ever recorded inside Qt's render pass (blits and layout
+// transitions there are invalid; the old blit-into-rendertarget path did
+// exactly that, plus the blit destination lacked TRANSFER_DST usage).
+//
+// Qt learns the image's current layout via QRhiTexture::setNativeLayout()
+// after every mpv render and records the transition to SHADER_READ_ONLY in
+// its own pass — the same mechanism QtMultimedia uses for zero-copy video.
+class VulkanVideoNode : public QSGSimpleTextureNode {
+public:
+    VulkanVideoNode() {
+        setFiltering(QSGTexture::Linear);
+        setOwnsTexture(false); // m_texture managed manually (resize replacement)
+    }
+    ~VulkanVideoNode() override { destroyImage(); }
+
+    void sync(MpvRenderItem *item);
+    // False when there is nothing to display (no video / no first frame yet).
+    // Don't use texture() for this: after destroyImage() the base node still
+    // holds the stale pointer (setTexture(nullptr) is not allowed).
+    bool hasVideoTexture() const { return m_texture != nullptr; }
+
+private:
+    void ensureImage(const QSize &size);
+    void destroyImage();
+
+    QQuickWindow *m_win = nullptr;
+    QSGTexture *m_texture = nullptr;  // wraps m_image
+    VkImage m_image = VK_NULL_HANDLE;
+    VkDeviceMemory m_memory = VK_NULL_HANDLE;
+    QSize m_size;
+    bool m_valid = false;             // mpv has rendered at least one frame
+    bool m_fboReadyNotified = false;
+};
+
+void VulkanVideoNode::sync(MpvRenderItem *item) {
+    m_win = item->window();
+    MpvController *p = item->player();
+    if (!p || !p->handle() || !m_win)
+        return;
+
+    if (!p->renderCtx())
+        p->ensureRenderCtx(m_win);
+    mpv_render_context *ctx = p->renderCtx();
+    if (!ctx)
+        return;
+
+    if (!p->hasVideo()) {
+        // Playback stopped: drop the last frame instead of freezing on it
+        // (matches the old path, which stopped drawing on !hasVideo).
+        destroyImage();
+        return;
+    }
+
+    setRect(0, 0, item->width(), item->height());
+
+    const qreal dpr = m_win->devicePixelRatio();
+    QSize px(int(item->width() * dpr), int(item->height() * dpr));
+    if (px.isEmpty())
+        px = QSize(16, 16);
+
+    ensureImage(px);
+    if (m_image == VK_NULL_HANDLE)
+        return;
+
+    // Must run on every update-callback wakeup — advanced-control mode
+    // dispatches mpv core work here — not only when we intend to render.
+    const bool newFrame =
+        (mpv_render_context_update(ctx) & MPV_RENDER_UPDATE_FRAME) != 0;
+    if (!newFrame && m_valid)
+        return; // texture still holds the previous frame — nothing to redo
+
+    mpv_vulkan_fbo fbo{};
+    fbo.image  = reinterpret_cast<void *>(m_image);
+    fbo.w      = px.width();
+    fbo.h      = px.height();
+    fbo.format = static_cast<int>(VK_FORMAT_R16G16B16A16_SFLOAT);
+    fbo.usage  = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+               | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT
+               | VK_IMAGE_USAGE_SAMPLED_BIT;
+    // Pre-seed with GENERAL: a stale mpv-2.dll that predates the out_layout
+    // field won't write it back, and GENERAL matches the layout gpu-next's
+    // compute-based output passes actually use.
+    fbo.out_layout = static_cast<int>(VK_IMAGE_LAYOUT_GENERAL);
+
+    // block=0: without it, mpv_render_context_render() sleeps until the
+    // frame's target display time, pinning the render thread — and with it
+    // the whole UI — to the video's frame rate.
+    int block = 0;
+    mpv_render_param params[] = {
+        {MPV_RENDER_PARAM_VULKAN_FBO, &fbo},
+        {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
+        {MPV_RENDER_PARAM_INVALID, nullptr}
+    };
+    mpv_render_context_render(ctx, params);
+    mpv_render_context_report_swap(ctx);
+    m_valid = true;
+
+    if (!m_texture) {
+        m_texture = QNativeInterface::QSGVulkanTexture::fromNative(
+            m_image, static_cast<VkImageLayout>(fbo.out_layout), m_win, m_size);
+        setTexture(m_texture);
+        if (!m_fboReadyNotified) {
+            m_fboReadyNotified = true;
+            QMetaObject::invokeMethod(item, "fboReady", Qt::QueuedConnection);
+        }
+    } else if (QRhiTexture *rt = m_texture->rhiTexture()) {
+        rt->setNativeLayout(fbo.out_layout);
+    }
+    markDirty(QSGNode::DirtyMaterial);
+}
+
+// (Re)creates m_image when the node size changes. No-op otherwise.
+void VulkanVideoNode::ensureImage(const QSize &size) {
+    if (m_image != VK_NULL_HANDLE && m_size == size)
+        return;
+
+    QRhi *rhi = m_win->rhi();
+    auto *nat = rhi ? static_cast<const QRhiVulkanNativeHandles *>(rhi->nativeHandles()) : nullptr;
+    if (!nat || !nat->dev || !nat->physDev || !nat->inst)
+        return;
+    VkDevice dev = static_cast<VkDevice>(nat->dev);
+    QVulkanDeviceFunctions *df = nat->inst->deviceFunctions(dev);
+    QVulkanFunctions *f = nat->inst->functions();
+    if (!df || !f)
+        return;
+
+    destroyImage();
+
+    VkImageCreateInfo imgInfo{};
+    imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imgInfo.imageType = VK_IMAGE_TYPE_2D;
+    imgInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    imgInfo.extent = {static_cast<uint32_t>(size.width()),
+                      static_cast<uint32_t>(size.height()), 1};
+    imgInfo.mipLevels = 1;
+    imgInfo.arrayLayers = 1;
+    imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imgInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                  | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_STORAGE_BIT
+                  | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    if (df->vkCreateImage(dev, &imgInfo, nullptr, &m_image) != VK_SUCCESS) {
+        m_image = VK_NULL_HANDLE;
+        return;
+    }
+
+    VkMemoryRequirements memReq;
+    df->vkGetImageMemoryRequirements(dev, m_image, &memReq);
+
+    VkPhysicalDeviceMemoryProperties memProps;
+    f->vkGetPhysicalDeviceMemoryProperties(static_cast<VkPhysicalDevice>(nat->physDev), &memProps);
+    uint32_t memTypeIdx = UINT32_MAX;
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+        if ((memReq.memoryTypeBits & (1u << i)) &&
+            (memProps.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+            memTypeIdx = i;
+            break;
+        }
+    }
+    if (memTypeIdx == UINT32_MAX) {
+        df->vkDestroyImage(dev, m_image, nullptr);
+        m_image = VK_NULL_HANDLE;
+        return;
+    }
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReq.size;
+    allocInfo.memoryTypeIndex = memTypeIdx;
+
+    if (df->vkAllocateMemory(dev, &allocInfo, nullptr, &m_memory) != VK_SUCCESS) {
+        df->vkDestroyImage(dev, m_image, nullptr);
+        m_image = VK_NULL_HANDLE;
+        return;
+    }
+    df->vkBindImageMemory(dev, m_image, m_memory, 0);
+    m_size = size;
+    m_valid = false; // fresh image — needs a real mpv render before display
+}
+
+void VulkanVideoNode::destroyImage() {
+    if (m_image == VK_NULL_HANDLE && !m_texture)
+        return;
+    QRhi *rhi = m_win ? m_win->rhi() : nullptr;
+    auto *nat = rhi ? static_cast<const QRhiVulkanNativeHandles *>(rhi->nativeHandles()) : nullptr;
+    QVulkanDeviceFunctions *df = (nat && nat->dev && nat->inst)
+        ? nat->inst->deviceFunctions(static_cast<VkDevice>(nat->dev)) : nullptr;
+    if (df && m_image) {
+        VkDevice dev = static_cast<VkDevice>(nat->dev);
+        // Frames still in flight may be sampling this image (scenegraph
+        // invalidation on fullscreen toggles lands here; resize too).
+        // Destroying it unguarded is a device loss.
+        df->vkDeviceWaitIdle(dev);
+        df->vkDestroyImage(dev, m_image, nullptr);
+        df->vkFreeMemory(dev, m_memory, nullptr);
+    }
+    m_image = VK_NULL_HANDLE;
+    m_memory = VK_NULL_HANDLE;
+    // The base node may keep the stale texture pointer (setTexture(nullptr)
+    // is not allowed); callers never let the node render in that state —
+    // either a new texture is set right after (resize) or the node is
+    // dropped by updatePaintNode (hasVideoTexture() == false).
+    delete m_texture;
+    m_texture = nullptr;
+    m_valid = false;
+}
+#endif // QT_CONFIG(vulkan)
 } // anonymous namespace
 
 QMutex &VideoRenderNode::renderMutex() { return s_renderMutex; }
@@ -117,19 +337,6 @@ void VideoRenderNode::render(const RenderState *state) {
 
     if (!st.renderCtx || !st.hasVideo) return;
 
-    // Frame-skip: if geometry unchanged for 3+ frames, mpv is paused/idle.
-    // Skip the GPU render call to save power and reduce render-thread wakeups.
-    {
-        QMutexLocker skipLock(&s_renderSkipMutex);
-        auto &entry = s_renderSkip[this];
-        if (st.nodeSize == entry.first && entry.second >= 3) {
-            entry.second++;
-            return;
-        }
-        entry.first = st.nodeSize;
-        entry.second++;
-    }
-
     auto *win = st.item ? st.item->window() : nullptr;
     if (!win) return;
 
@@ -138,75 +345,30 @@ void VideoRenderNode::render(const RenderState *state) {
         return;
     }
 
-#if QT_CONFIG(vulkan)
-    // ── Vulkan render API backend ──
-    if (rhi->backend() == QRhi::Vulkan) {
-        win->beginExternalCommands();
-
-        QRhiSwapChain *sc = win->swapChain();
-        if (!sc) { win->endExternalCommands(); return; }
-
-        VkImage vkImg = VK_NULL_HANDLE;
-        QSize rtSize = st.nodeSize;
-        VkFormat vkFmt = VK_FORMAT_B8G8R8A8_UNORM;
-
-#ifdef MFPLAYER_HAS_VK_SWAPCHAIN_PRIVATE
-        auto *vkSc = static_cast<QVkSwapChain *>(sc);
-        quint32 idx = vkSc->currentImageIndex;
-        vkImg = vkSc->imageRes[idx].image;
-        rtSize = sc->currentPixelSize();
-        QVariant hdr = win->property("_hdrActive");
-        vkFmt = (hdr.toBool())
-            ? VK_FORMAT_A2B10G10R10_UNORM_PACK32
-            : VK_FORMAT_B8G8R8A8_UNORM;
-#else
-        QRhiRenderTarget *rt = sc->currentFrameRenderTarget();
-        if (rt && rt->resourceType() == QRhiResource::TextureRenderTarget) {
-            auto *trt = static_cast<QRhiTextureRenderTarget *>(rt);
-            const auto desc = trt->description();
-            auto it = desc.cbeginColorAttachments();
-            if (it != desc.cendColorAttachments() && it->texture()) {
-                auto nt = it->texture()->nativeTexture();
-                vkImg = reinterpret_cast<VkImage>(nt.object);
-                rtSize = it->texture()->pixelSize();
-            }
-        }
-#endif
-
-        if (!vkImg || vkImg == VK_NULL_HANDLE) {
-            win->endExternalCommands();
-            return;
-        }
-
-        // ── Simple direct render (same shape as D3D11 path) ──────
-        // mpv/libplacebo handles all VkCommandBuffer work and layout
-        // transitions internally.  We just provide the target VkImage.
-        mpv_render_context_update(st.renderCtx);
-
-        mpv_vulkan_fbo fbo{};
-        fbo.image  = reinterpret_cast<void*>(vkImg);
-        fbo.w      = rtSize.width();
-        fbo.h      = rtSize.height();
-        fbo.format = static_cast<int>(vkFmt);
-        fbo.usage  = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-        int advanced = 1;
-        mpv_render_param params[] = {
-            {MPV_RENDER_PARAM_VULKAN_FBO, &fbo},
-            {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
-            {MPV_RENDER_PARAM_INVALID, nullptr}
-        };
-        mpv_render_context_render(st.renderCtx, params);
-        mpv_render_context_report_swap(st.renderCtx);
-        { QMutexLocker l(&s_renderSkipMutex); s_renderSkip[this].second = 0; }
-
-        win->endExternalCommands();
-        return;
-    }
-#endif // QT_CONFIG(vulkan)
+    // Qt Quick redraws the entire scene into a cleared backbuffer on every
+    // frame it composes, so once video exists this node must put pixels on
+    // the render target on EVERY call — any early "skip" here presents the
+    // window clear color in the video area for one frame, visible as a black
+    // flash (mpv pings ~1/sec even paused -> 1 Hz flicker; a control-bar
+    // fade animation composes ~12 frames -> a burst of flashes).
+    //
+    // The only work that MAY be skipped is the expensive mpv render into the
+    // cached offscreen target. The update callback fires for reasons
+    // unrelated to new frames — render.h: "the callback can now be called
+    // even if there is no new frame. The API user should call
+    // mpv_render_context_update() and interpret the return value for whether
+    // a new frame should be rendered." So ask mpv; with no new frame, the
+    // cached offscreen content is re-blitted instead (OpenGL), or mpv
+    // redraws the previous frame itself (D3D11, which has no cache).
+    const bool newFrame =
+        (mpv_render_context_update(st.renderCtx) & MPV_RENDER_UPDATE_FRAME) != 0;
 
 #ifdef Q_OS_WIN
     // ── D3D11 render API backend ──
+    // No offscreen cache here — mpv draws straight into Qt's render target,
+    // which Qt cleared this frame. Render unconditionally: with no new frame
+    // mpv just redraws the previous one (documented mpv_render_context_render
+    // behavior); skipping would present the clear color for a frame.
     if (rhi->backend() == QRhi::D3D11) {
         win->beginExternalCommands();
 
@@ -231,17 +393,14 @@ void VideoRenderNode::render(const RenderState *state) {
         ID3D11Texture2D *tex = static_cast<ID3D11Texture2D *>(res);
 
         mpv_d3d11_fbo fbo{tex, st.nodeSize.width(), st.nodeSize.height()};
-        int advanced = 1;
         int block = 0;
         mpv_render_param params[] = {
             {MPV_RENDER_PARAM_D3D11_FBO, &fbo},
-            {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
             {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
             {MPV_RENDER_PARAM_INVALID, nullptr}
         };
         mpv_render_context_render(st.renderCtx, params);
         mpv_render_context_report_swap(st.renderCtx);
-        { QMutexLocker l(&s_renderSkipMutex); s_renderSkip[this].second = 0; }
 
         rtv->Release();
         res->Release();
@@ -258,85 +417,89 @@ void VideoRenderNode::render(const RenderState *state) {
     // Workaround: render mpv to an offscreen FBO, then glBlitFramebuffer
     // with swapped Y to the draw FBO. FBO+texture cached across frames — only
     // recreated when node size changes (e.g. resize / HDR toggle).
-    {
-        win->beginExternalCommands();
+    win->beginExternalCommands();
 
-        auto *glCtx = QOpenGLContext::currentContext();
-        if (!glCtx) {
-            win->endExternalCommands();
-            return;
-        }
-        auto *f = glCtx->extraFunctions();
+    auto *glCtx = QOpenGLContext::currentContext();
+    if (!glCtx) {
+        win->endExternalCommands();
+        return;
+    }
+    auto *f = glCtx->extraFunctions();
 
-        GLint drawFbo = 0;
-        f->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFbo);
+    GLint drawFbo = 0;
+    f->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFbo);
 
-        const int w = st.nodeSize.width();
-        const int h = st.nodeSize.height();
+    const int w = st.nodeSize.width();
+    const int h = st.nodeSize.height();
 
-        // Cache offscreen FBO — only recreate when size changes
-        if (st.offFboSize != st.nodeSize) {
-            if (st.offFbo)  f->glDeleteFramebuffers(1, &st.offFbo);
-            if (st.offTex)  f->glDeleteTextures(1, &st.offTex);
-            f->glGenFramebuffers(1, &st.offFbo);
-            f->glGenTextures(1, &st.offTex);
-            f->glBindTexture(GL_TEXTURE_2D, st.offTex);
-            f->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
-                            GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-            f->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            f->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            f->glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                      GL_TEXTURE_2D, st.offTex, 0);
-            // Write back to master state so next frame sees the cached FBO
-            { QMutexLocker l(&s_stateMutex);
-              auto &ms = s_state[this];
-              ms.offFbo = st.offFbo;
-              ms.offTex = st.offTex;
-              ms.offFboSize = st.nodeSize; }
-        }
+    // Cache offscreen FBO — only recreate when size changes
+    if (st.offFboSize != st.nodeSize) {
+        if (st.offFbo)  f->glDeleteFramebuffers(1, &st.offFbo);
+        if (st.offTex)  f->glDeleteTextures(1, &st.offTex);
+        f->glGenFramebuffers(1, &st.offFbo);
+        f->glGenTextures(1, &st.offTex);
+        f->glBindTexture(GL_TEXTURE_2D, st.offTex);
+        f->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
+                        GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        f->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        f->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        f->glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                  GL_TEXTURE_2D, st.offTex, 0);
+        st.offValid = false;  // fresh texture — force an mpv render below
+        // Write back to master state so next frame sees the cached FBO
+        { QMutexLocker l(&s_stateMutex);
+          auto &ms = s_state[this];
+          ms.offFbo = st.offFbo;
+          ms.offTex = st.offTex;
+          ms.offFboSize = st.nodeSize;
+          ms.offValid = false; }
+    }
+
+    if (newFrame || !st.offValid) {
         f->glBindFramebuffer(GL_FRAMEBUFFER, st.offFbo);
-
-        mpv_render_context_update(st.renderCtx);
 
         mpv_opengl_fbo mpvFbo{
             static_cast<int>(st.offFbo), w, h, 0
         };
-        int advanced = 1;
         int block = 0;
         mpv_render_param params[] = {
             {MPV_RENDER_PARAM_OPENGL_FBO, &mpvFbo},
-            {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
             {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block},
             {MPV_RENDER_PARAM_INVALID, nullptr}
         };
         mpv_render_context_render(st.renderCtx, params);
         mpv_render_context_report_swap(st.renderCtx);
-        { QMutexLocker l(&s_renderSkipMutex); s_renderSkip[this].second = 0; }
 
-        // Blit with Y-flip:
-        f->glBindFramebuffer(GL_READ_FRAMEBUFFER, st.offFbo);
-        f->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(drawFbo));
-        f->glBlitFramebuffer(0, 0, w, h,
-                             0, h, w, 0,
-                             GL_COLOR_BUFFER_BIT, GL_NEAREST);
-
-        win->endExternalCommands();
+        QMutexLocker l(&s_stateMutex);
+        s_state[this].offValid = true;
     }
+
+    // Blit with Y-flip — on every composed frame, even when mpv had nothing
+    // new: Qt cleared this backbuffer, skipping the blit shows the clear color.
+    f->glBindFramebuffer(GL_READ_FRAMEBUFFER, st.offFbo);
+    f->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(drawFbo));
+    f->glBlitFramebuffer(0, 0, w, h,
+                         0, h, w, 0,
+                         GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    win->endExternalCommands();
 }
 
 void VideoRenderNode::releaseResources() {
-    QMutexLocker lock(&s_stateMutex);
-    auto it = s_state.find(this);
-    if (it != s_state.end()) {
-        if (it->offFbo || it->offTex) {
-            if (auto *ctx = QOpenGLContext::currentContext()) {
-                auto *f = ctx->functions();
-                if (it->offFbo) f->glDeleteFramebuffers(1, &it->offFbo);
-                if (it->offTex) f->glDeleteTextures(1, &it->offTex);
+    {
+        QMutexLocker lock(&s_stateMutex);
+        auto it = s_state.find(this);
+        if (it != s_state.end()) {
+            if (it->offFbo || it->offTex) {
+                if (auto *ctx = QOpenGLContext::currentContext()) {
+                    auto *f = ctx->functions();
+                    if (it->offFbo) f->glDeleteFramebuffers(1, &it->offFbo);
+                    if (it->offTex) f->glDeleteTextures(1, &it->offTex);
+                }
             }
         }
+        s_state.remove(this);
     }
-    s_state.remove(this);
 }
 
 void VideoRenderNode::detachController(MpvController *controller) {
@@ -407,6 +570,22 @@ void MpvRenderItem::setPlayer(MpvController *p) {
 }
 
 QSGNode *MpvRenderItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
+#if QT_CONFIG(vulkan)
+    if (QQuickWindow *win = window(); win && win->rhi()
+            && win->rhi()->backend() == QRhi::Vulkan) {
+        auto *node = static_cast<VulkanVideoNode *>(old);
+        if (!node)
+            node = new VulkanVideoNode;
+        m_dirty = false; // node->sync asks mpv itself whether a frame is due
+        node->sync(this);
+        if (!node->hasVideoTexture()) {
+            // Nothing to show (no video, or first frame not rendered yet).
+            delete node;
+            return nullptr;
+        }
+        return node;
+    }
+#endif
     VideoRenderNode *node = static_cast<VideoRenderNode *>(old);
     if (!node) {
         node = new VideoRenderNode;

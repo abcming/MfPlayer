@@ -54,6 +54,7 @@ qt_add_executable(mfplayer_app
     core/settings/settingsstore.cpp
     platform/rendering/mpv/mpvcontroller.cpp
     platform/rendering/mpv/mpvrenderitem.cpp
+    platform/rendering/vulkandevice.cpp
     core/providers/emby/embyclient.cpp
     core/media/models/mediamodel.cpp
     core/playback/playbackcontroller.cpp
@@ -207,7 +208,7 @@ endif()
 
 set_target_properties(mfplayer_app PROPERTIES
     OUTPUT_NAME "MfPlayer"
-    WIN32_EXECUTABLE TRUE
+    WIN32_EXECUTABLE FALSE
 )
 
 add_custom_command(TARGET mfplayer_app POST_BUILD

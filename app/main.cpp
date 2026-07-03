@@ -34,6 +34,7 @@ static void setDarkTitleBar(QWindow *w) {
 }
 #endif
 #include "platform/rendering/mpv/mpvrenderitem.h"
+#include "platform/rendering/vulkandevice.h"
 
 static QThreadPool s_ioPool;
 
@@ -80,6 +81,15 @@ int main(int argc, char *argv[]) {
     app.setWindowIcon(QIcon(":/mfplayer/resources/appicon.ico"));
 
     qmlRegisterType<MpvRenderItem>("mfplayer", 1, 0, "MpvRenderItem");
+
+#if QT_CONFIG(vulkan)
+    // Create the VkDevice ourselves so the features libplacebo relies on
+    // (synchronization2, pushDescriptor, ...) are actually enabled — Qt's own
+    // device creation enables only a minimal set. Falls back to Qt's default
+    // path when unsupported (libmpv then degrades to a 1.2 feature level).
+    if (QQuickWindow::graphicsApi() == QSGRendererInterface::Vulkan)
+        VulkanDevice::initialize();
+#endif
 
     // Configure I/O thread pool: 2-4 threads for filesystem work.
     // Separate from globalInstance() so disk-blocked threads don't starve CPU tasks.
@@ -147,6 +157,14 @@ int main(int argc, char *argv[]) {
             // Request HDR swapchain via Qt 6.11 QRhi — must be set before scene graph init.
             // Uses 10-bit Rec.2020 PQ (R10G10B10A2) to match mpv's target-trc=pq target-prim=bt.2020.
             win->setProperty("_qt_sg_hdr_format", "hdr10");
+#if QT_CONFIG(vulkan)
+            // Hand Qt our own device — same pre-scenegraph-init timing as the
+            // HDR format property above.
+            if (VulkanDevice::isActive()) {
+                win->setVulkanInstance(VulkanDevice::vulkanInstance());
+                win->setGraphicsDevice(VulkanDevice::graphicsDevice());
+            }
+#endif
             playbackCtrl->setRootWindow(win);
             rootWin = win;
 #ifdef Q_OS_WIN
