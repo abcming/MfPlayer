@@ -5,6 +5,7 @@
 #include <QImageReader>
 #include <QTimer>
 #include <QMutexLocker>
+#include <QThreadPool>
 #include <QQuickTextureFactory>
 
 // ── Async response ────────────────────────────────────────────────
@@ -19,31 +20,28 @@ ImageCacheResponse::ImageCacheResponse(const QString &id, const QString &path,
     , m_maxEntries(maxEntries), m_id(id)
 {
     if (skipProcess) {
-        // Cache hit: m_pixmap already set by caller, no thread needed.
+        // Cache hit: m_image already set by caller, no thread needed.
         // Defer finished() — cannot emit in constructor.
         QTimer::singleShot(0, this, &QQuickImageResponse::finished);
     } else {
-        // Cache miss: decode on background thread
-        m_thread = std::thread([this]() { process(); });
+        // Cache miss: decode on the global CPU pool. Lifetime is safe without
+        // join: process() always ends by queueing finished(), and Qt only
+        // deletes the response after finished() is delivered on the main thread.
+        QThreadPool::globalInstance()->start([this]() { process(); });
     }
-}
-
-ImageCacheResponse::~ImageCacheResponse() {
-    if (m_thread.joinable())
-        m_thread.join();
 }
 
 void ImageCacheResponse::process() {
     if (m_path.isEmpty()) {
-        m_pixmap = QPixmap(1, 1);
-        m_pixmap.fill(Qt::transparent);
+        m_image = QImage(1, 1, QImage::Format_ARGB32);
+        m_image.fill(Qt::transparent);
         // Queue finished() to main thread — safe if object is destroyed before delivery
         QMetaObject::invokeMethod(this, [this]() { emit finished(); }, Qt::QueuedConnection);
         return;
     }
 
     // Disk I/O + decode — runs on background thread, NOT the render thread
-    QPixmap decoded;
+    QImage decoded;
     if (m_requestedSize.isValid() && m_requestedSize.width() > 0) {
         QImageReader reader(m_path);
         reader.setAutoTransform(true);
@@ -53,22 +51,21 @@ void ImageCacheResponse::process() {
             QSize scaled = QSizeF(orig).scaled(QSizeF(m_requestedSize), Qt::KeepAspectRatio).toSize();
             reader.setScaledSize(scaled);
         }
-        QImage img = reader.read();
-        if (!img.isNull())
-            decoded = QPixmap::fromImage(img);
+        decoded = reader.read();
     }
     if (decoded.isNull())
         decoded.load(m_path);
 
     if (decoded.isNull()) {
-        decoded = QPixmap(1, 1);
+        decoded = QImage(1, 1, QImage::Format_ARGB32);
         decoded.fill(Qt::transparent);
     } else {
-        // Publish pixmap BEFORE cache insert — textureFactory() runs after
-        // finished() signal, so ordering guarantee makes m_pixmapMutex unnecessary.
-        m_pixmap = decoded;
+        // Publish image BEFORE cache insert — textureFactory() runs after
+        // finished() signal, so ordering guarantee makes a mutex unnecessary.
+        m_image = decoded;
         // Insert into shared memory cache (protected by provider's mutex).
-        // Use std::move to avoid QPixmap deep-copy under the mutex.
+        // Use std::move to avoid deep-copy under the mutex (m_image keeps a
+        // shared ref, so the move only transfers the handle).
         QMutexLocker lock(m_cacheMutex);
         m_lru->push_front(m_id);
         (*m_memCache)[m_id] = {std::move(decoded), m_lru->begin()};
@@ -83,13 +80,11 @@ void ImageCacheResponse::process() {
 }
 
 QQuickTextureFactory *ImageCacheResponse::textureFactory() const {
-    // No mutex needed: m_pixmap is set before finished() is emitted,
+    // No mutex needed: m_image is set before finished() is emitted,
     // and Qt only calls textureFactory() after finished().
-    // Cache the QImage to avoid repeated QPixmap::toImage() conversions
-    // (each conversion is a ~1.5MB memcpy for a 500x750 thumbnail).
-    if (m_cachedImage.isNull())
-        m_cachedImage = m_pixmap.toImage();
-    return QQuickTextureFactory::textureFactoryForImage(m_cachedImage);
+    // QImage is implicitly shared — no conversion, no copy (the old
+    // QPixmap round-trip cost a ~1.5MB memcpy per request, cache hits included).
+    return QQuickTextureFactory::textureFactoryForImage(m_image);
 }
 
 // ── Async image provider ──────────────────────────────────────────
@@ -113,8 +108,8 @@ QQuickImageResponse *ImageCacheProvider::requestImageResponse(const QString &id,
             auto *resp = new ImageCacheResponse(id, QString(), requestedSize,
                                                 &m_mutex, &m_memCache, &m_lru, kMaxEntries,
                                                 /*skipProcess=*/true);
-            // Set pixmap before thread could possibly touch it (thread not started)
-            resp->m_pixmap = it->second.pixmap;
+            // Shallow copy (implicit sharing) — no decode thread was started
+            resp->m_image = it->second.image;
             return resp;
         }
     }

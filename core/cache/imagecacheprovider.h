@@ -1,10 +1,9 @@
 #pragma once
 #include <QQuickAsyncImageProvider>
 #include <QQuickImageResponse>
-#include <QPixmap>
+#include <QImage>
 #include <QMutex>
 #include <QSize>
-#include <thread>
 #include <list>
 #include <unordered_map>
 
@@ -14,7 +13,7 @@ class ImageCacheResponse : public QQuickImageResponse {
     Q_OBJECT
 public:
     struct CacheEntry {
-        QPixmap pixmap;
+        QImage image;
         std::list<QString>::iterator lruIt;
     };
 
@@ -23,15 +22,13 @@ public:
                        std::unordered_map<QString, CacheEntry> *memCache,
                        std::list<QString> *lru, int maxEntries,
                        bool skipProcess = false);
-    ~ImageCacheResponse() override;
     QQuickTextureFactory *textureFactory() const override;
 
-    QPixmap m_pixmap;  // public so provider can set it for cache-hit fast path
-    mutable QImage m_cachedImage;  // cached conversion result (lazy, avoids repeated toImage() calls)
+    QImage m_image;  // public so provider can set it for cache-hit fast path
 
 private:
     void process();
-    // m_pixmap ordering: set in process() before finished() emitted → Qt only
+    // m_image ordering: set in process() before finished() emitted → Qt only
     // calls textureFactory() after finished() → write happens-before read. No mutex needed.
     QString m_path;
     QSize m_requestedSize;
@@ -40,7 +37,6 @@ private:
     std::list<QString> *m_lru;
     int m_maxEntries;
     QString m_id;
-    std::thread m_thread;
 };
 
 class ImageCacheProvider : public QQuickAsyncImageProvider {

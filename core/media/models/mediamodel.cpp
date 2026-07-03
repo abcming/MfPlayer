@@ -60,11 +60,13 @@ QHash<int, QByteArray> MediaModel::roleNames() const {
 }
 
 void MediaModel::setItems(const QJsonArray &items) {
-    if (items.size() == m_lastSourceJson.size()
-        && (items.isEmpty() || items.first().toObject().value("Id").toString()
-            == m_lastSourceJson.first().toObject().value("Id").toString()))
+    QString firstId = items.isEmpty()
+        ? QString() : items.first().toObject().value("Id").toString();
+    if (items.size() == m_lastSourceSize
+        && (items.isEmpty() || firstId == m_lastSourceFirstId))
         return;
-    m_lastSourceJson = items;
+    m_lastSourceSize = items.size();
+    m_lastSourceFirstId = firstId;
     beginResetModel();
     m_items.clear();
     m_idToIndex.clear();
@@ -126,7 +128,8 @@ void MediaModel::clear() {
     m_items.clear();
     m_idToIndex.clear();
     m_alphaIndex.clear();
-    m_lastSourceJson = QJsonArray();
+    m_lastSourceSize = 0;
+    m_lastSourceFirstId.clear();
     endResetModel();
     emit alphaIndexChanged();
 }

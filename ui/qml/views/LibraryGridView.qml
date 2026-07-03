@@ -76,7 +76,7 @@ GridView {
             if (Library.canLoadMore && grid.contentY + grid.height > grid.contentHeight - 2000) {
                 _anchorIdx = grid.indexAt(grid.contentX + grid.cellWidth / 2,
                                           grid.contentY + grid.cellHeight / 2)
-                Library.loadMoreEpisodes()
+                Library.loadMore()
             }
         }
     }

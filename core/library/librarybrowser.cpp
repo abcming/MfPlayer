@@ -155,8 +155,13 @@ void LibraryBrowser::browseLibrary(const QString &libraryId) {
     m_currentTab = TabDefault;
     m_browseContext.clear();
     m_contentModel->clear();
+    ++m_browseGeneration;
+    m_loadingMore = false;
+    m_paginationLimit = kPageSize;
+    m_totalItems = -1;
     emit currentLibraryIdChanged();
     emit currentTabChanged();
+    emit totalItemsChanged();
 
     // Reset filters on library switch (keep sort preference)
     m_filterFavorites = false;
@@ -170,7 +175,8 @@ void LibraryBrowser::browseLibrary(const QString &libraryId) {
         .includeTypes = includeTypes,
         .filters = buildFiltersString(),
         .sortBy = currentSortByString(),
-        .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending")
+        .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending"),
+        .limit = m_paginationLimit
     });
 }
 
@@ -179,6 +185,8 @@ void LibraryBrowser::setLibraryTab(int tab) {
     m_currentTab = tab;
     m_browseContext.clear();
     m_contentModel->clear();
+    ++m_browseGeneration;
+    m_loadingMore = false;
     m_paginationLimit = 0;
     m_totalItems = -1;
     emit currentTabChanged();
@@ -187,12 +195,14 @@ void LibraryBrowser::setLibraryTab(int tab) {
 
     switch (tab) {
     case TabDefault:
+        m_paginationLimit = kPageSize;
         m_emby->fetchItemsFiltered({
             .parentId = m_currentLibraryId,
             .includeTypes = m_libraryTypes.value(m_currentLibraryId) == "movies" ? Constants::kTypeMovie : Constants::kTypeSeries,
             .filters = buildFiltersString(),
             .sortBy = currentSortByString(),
-            .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending")
+            .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending"),
+            .limit = m_paginationLimit
         });
         break;
     case TabSuggestions:
@@ -212,7 +222,7 @@ void LibraryBrowser::setLibraryTab(int tab) {
         m_emby->fetchStudios(m_currentLibraryId);
         break;
     case TabEpisodes:
-        m_paginationLimit = 200;
+        m_paginationLimit = kPageSize;
         m_totalItems = -1;
         emit totalItemsChanged();
         m_emby->fetchItemsFiltered({
@@ -236,19 +246,39 @@ void LibraryBrowser::setLibraryTab(int tab) {
     }
 }
 
-void LibraryBrowser::loadMoreEpisodes() {
+void LibraryBrowser::loadMore() {
     if (m_paginationLimit <= 0 || m_loadingMore) return;
     int loaded = m_contentModel->rowCount();
     if (m_totalItems >= 0 && loaded >= m_totalItems) return;
     m_loadingMore = true;
+    QString includeTypes = m_currentTab == TabEpisodes
+        ? Constants::kTypeEpisode
+        : (m_libraryTypes.value(m_currentLibraryId) == "movies" ? Constants::kTypeMovie
+                                                                : Constants::kTypeSeries);
+    // 回调版绕过 itemsFetched 分发: 续拉批次不覆盖缓存里的首屏数据,
+    // gen 比对丢弃列表切换后仍在飞行的旧批次
+    uint32_t gen = m_browseGeneration;
     m_emby->fetchItemsFiltered({
         .parentId = m_currentLibraryId,
-        .includeTypes = Constants::kTypeEpisode,
+        .includeTypes = includeTypes,
         .filters = buildFiltersString(),
         .sortBy = currentSortByString(),
         .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending"),
         .limit = m_paginationLimit,
         .startIndex = loaded
+    }, [this, gen](const QJsonArray &items) {
+        m_loadingMore = false;
+        if (gen != m_browseGeneration) return;
+        if (items.isEmpty()) {
+            // 服务器实际条数少于 TotalRecordCount — 修正并停止续拉
+            m_totalItems = m_contentModel->rowCount();
+            emit totalItemsChanged();
+            return;
+        }
+        m_contentModel->appendItems(items);
+        // TabDefault 自动渐进拉满 (字母索引需要全量); Episodes 保持滚动触发
+        if (m_currentTab == TabDefault && canLoadMore())
+            loadMore();
     });
 }
 
@@ -256,6 +286,9 @@ void LibraryBrowser::browseGenre(const QString &genreId, const QString &genreNam
     if (m_currentLibraryId.isEmpty()) return;
     m_browseContext = genreName;
     m_pendingGenreSwitch = true;
+    ++m_browseGeneration;
+    m_loadingMore = false;
+    m_paginationLimit = 0;  // genre 结果全量返回, 不续拉
     emit browseContextChanged();
     m_emby->fetchItemsFiltered({.parentId = m_currentLibraryId,
         .includeTypes = m_libraryTypes.value(m_currentLibraryId) == "movies" ? Constants::kTypeMovie : Constants::kTypeSeries,
@@ -269,6 +302,9 @@ void LibraryBrowser::browseStudio(const QString &studioId, const QString &studio
     if (m_currentLibraryId.isEmpty()) return;
     m_browseContext = studioName;
     m_pendingStudioSwitch = true;
+    ++m_browseGeneration;
+    m_loadingMore = false;
+    m_paginationLimit = 0;  // studio 结果全量返回, 不续拉
     emit browseContextChanged();
     m_emby->fetchItemsFiltered({.parentId = m_currentLibraryId,
         .includeTypes = m_libraryTypes.value(m_currentLibraryId) == "movies" ? Constants::kTypeMovie : Constants::kTypeSeries,
@@ -280,6 +316,9 @@ void LibraryBrowser::browseStudio(const QString &studioId, const QString &studio
 
 void LibraryBrowser::browsePerson(const QString &personId, const QString &personName) {
     m_browseContext = personName;
+    ++m_browseGeneration;
+    m_loadingMore = false;
+    m_paginationLimit = 0;
     emit currentTabChanged();
     emit browseContextChanged();
     emit personBrowseStarted(personName);
@@ -429,6 +468,10 @@ void LibraryBrowser::clearAll() {
         delete m;
     m_latestModels.clear();
 
+    ++m_browseGeneration;
+    m_loadingMore = false;
+    m_paginationLimit = 0;
+
     bool idChanged = !m_currentLibraryId.isEmpty();
     m_currentLibraryId.clear();
     m_libraryTypes.clear();
@@ -448,12 +491,8 @@ void LibraryBrowser::onItemsFetched(const QJsonArray &items, const QString &pare
 
     if (parentId != m_currentLibraryId) return;
 
-    if (m_loadingMore) {
-        m_loadingMore = false;
-        m_contentModel->appendItems(items);
-    } else {
-        m_contentModel->setItems(items);
-    }
+    // 续拉批次走 loadMore 的直接回调, 不经过这里 — 到达的只会是首屏/全量数据
+    m_contentModel->setItems(items);
 
     if (m_pendingStudioSwitch) {
         m_pendingStudioSwitch = false;
@@ -470,6 +509,10 @@ void LibraryBrowser::onItemsFetched(const QJsonArray &items, const QString &pare
         m_totalItems = totalRecordCount;
         emit totalItemsChanged();
     }
+
+    // TabDefault 首批到达后自动渐进拉满 (A-Z 字母索引需要全量数据)
+    if (m_currentTab == TabDefault && canLoadMore())
+        loadMore();
 }
 
 // ── Sort & Filter ──
@@ -532,6 +575,8 @@ void LibraryBrowser::applySortAndFilter() {
     if (m_currentTab == TabSuggestions || m_currentTab == TabFavorites
         || m_currentTab == TabGenres || m_currentTab == TabStudios) return;
 
+    ++m_browseGeneration;
+    m_loadingMore = false;
     m_paginationLimit = 0;
     m_totalItems = -1;
     emit totalItemsChanged();
@@ -539,16 +584,18 @@ void LibraryBrowser::applySortAndFilter() {
 
     switch (m_currentTab) {
     case TabDefault:
+        m_paginationLimit = kPageSize;
         m_emby->fetchItemsFiltered({
             .parentId = m_currentLibraryId,
             .includeTypes = m_libraryTypes.value(m_currentLibraryId) == "movies" ? Constants::kTypeMovie : Constants::kTypeSeries,
             .filters = buildFiltersString(),
             .sortBy = currentSortByString(),
-            .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending")
+            .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending"),
+            .limit = m_paginationLimit
         });
         break;
     case TabEpisodes:
-        m_paginationLimit = 200;
+        m_paginationLimit = kPageSize;
         m_totalItems = -1;
         emit totalItemsChanged();
         m_emby->fetchItemsFiltered({

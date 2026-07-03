@@ -96,7 +96,7 @@ public slots:
     Q_INVOKABLE void browseGenre(const QString &genreId, const QString &genreName);
     Q_INVOKABLE void browseStudio(const QString &studioId, const QString &studioName);
     Q_INVOKABLE void browsePerson(const QString &personId, const QString &personName);
-    Q_INVOKABLE void loadMoreEpisodes();
+    Q_INVOKABLE void loadMore();
     Q_INVOKABLE void fetchHome();
     Q_INVOKABLE void refreshResume() { m_emby->fetchResume(12); }
     Q_INVOKABLE void fetchFavorites(const QString &libraryId = QString());
@@ -150,6 +150,10 @@ private:
     int m_totalItems = -1;
     int m_paginationLimit = 0;
     bool m_loadingMore = false;
+    // 每次列表语义切换(换库/tab/排序/筛选/genre...)自增, loadMore 回调比对后
+    // 丢弃仍在飞行的旧分页批次 — 防止旧排序数据 append 进新列表
+    uint32_t m_browseGeneration = 0;
+    static constexpr int kPageSize = 200;
     bool m_pendingStudioSwitch = false;
     bool m_pendingGenreSwitch = false;
     MediaModel *m_favMoviesModel;

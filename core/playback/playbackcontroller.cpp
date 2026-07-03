@@ -153,48 +153,47 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
             emit currentItemDetailChanged();
         }
         m_currentPlaySessionId = playSessionId;
-        m_emby->reportPlaybackStart(itemId, startTimeTicks, playSessionId, m_currentMediaSourceId,
-            [this, streamUrl, startTimeTicks, gen, audioIndex, subtitleIndex]() {
-            if (gen != m_playGeneration) return;
-            QString fullUrl = streamUrl.startsWith('/')
-                ? m_emby->serverUrl() + streamUrl
-                : streamUrl;
+        // 上报与 loadfile 并行 — 起播不依赖 Emby 回执, 省一个网络往返
+        m_emby->reportPlaybackStart(itemId, startTimeTicks, playSessionId, m_currentMediaSourceId);
 
-            // ── Language preferences BEFORE play() so mpv auto-selects correctly ──
-            QJsonArray streams = streamsForSelectedSource();
+        QString fullUrl = streamUrl.startsWith('/')
+            ? m_emby->serverUrl() + streamUrl
+            : streamUrl;
 
-            // Audio: look up language from Emby Index → set alang
-            if (audioIndex >= 0) {
-                for (const QJsonValue &v : streams) {
-                    QJsonObject st = v.toObject();
-                    if (st["Type"].toString() == Constants::kStreamTypeAudio
-                        && st["Index"].toInt() == audioIndex) {
-                        QString lang = st["Language"].toString();
-                        if (!lang.isEmpty()) m_mpv->setAlang(lang);
-                        break;
-                    }
+        // ── Language preferences BEFORE play() so mpv auto-selects correctly ──
+        QJsonArray streams = streamsForSelectedSource();
+
+        // Audio: look up language from Emby Index → set alang
+        if (audioIndex >= 0) {
+            for (const QJsonValue &v : streams) {
+                QJsonObject st = v.toObject();
+                if (st["Type"].toString() == Constants::kStreamTypeAudio
+                    && st["Index"].toInt() == audioIndex) {
+                    QString lang = st["Language"].toString();
+                    if (!lang.isEmpty()) m_mpv->setAlang(lang);
+                    break;
                 }
             }
+        }
 
-            // Subtitle: look up language from Emby Index → set slang
-            if (subtitleIndex >= 0) {
-                for (const QJsonValue &v : streams) {
-                    QJsonObject st = v.toObject();
-                    if (st["Type"].toString() == Constants::kStreamTypeSubtitle
-                        && st["Index"].toInt() == subtitleIndex) {
-                        QString lang = st["Language"].toString();
-                        if (!lang.isEmpty()) m_mpv->setSlang(lang);
-                        break;
-                    }
+        // Subtitle: look up language from Emby Index → set slang
+        if (subtitleIndex >= 0) {
+            for (const QJsonValue &v : streams) {
+                QJsonObject st = v.toObject();
+                if (st["Type"].toString() == Constants::kStreamTypeSubtitle
+                    && st["Index"].toInt() == subtitleIndex) {
+                    QString lang = st["Language"].toString();
+                    if (!lang.isEmpty()) m_mpv->setSlang(lang);
+                    break;
                 }
-            } else if (subtitleIndex == -2) {
-                // "Off": clear slang so mpv won't auto-select; fileLoaded also calls setSid(-2→"no")
-                m_mpv->setSlang(QString());
             }
+        } else if (subtitleIndex == -2) {
+            // "Off": clear slang so mpv won't auto-select; fileLoaded also calls setSid(-2→"no")
+            m_mpv->setSlang(QString());
+        }
 
-            m_mpv->play(fullUrl, m_emby->serverUrl(), startTimeTicks / static_cast<double>(Constants::kTicksPerSecond));
-            m_progressTimer->start();
-        });
+        m_mpv->play(fullUrl, m_emby->serverUrl(), startTimeTicks / static_cast<double>(Constants::kTicksPerSecond));
+        m_progressTimer->start();
     }, m_currentMediaSourceId, m_pendingSubIdx);
 }
 

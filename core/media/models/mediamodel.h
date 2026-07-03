@@ -65,7 +65,10 @@ private:
     };
     QList<Item> m_items;
     QHash<QString, int> m_idToIndex;  // O(1) lookup by itemId
-    QJsonArray m_lastSourceJson;
+    // Dedup fingerprint of the last setItems() source — size + first Id is
+    // enough; keeping the whole QJsonArray pinned MBs for large libraries.
+    int m_lastSourceSize = 0;
+    QString m_lastSourceFirstId;
     QVariantMap m_alphaIndex;          // incrementally maintained A-Z→row map
 
     void rebuildAlphaIndex();
