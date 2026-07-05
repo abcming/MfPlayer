@@ -2,11 +2,13 @@
 #if QT_CONFIG(vulkan)
 
 #include <QVulkanFunctions>
+#include <rhi/qrhi_platform.h>
 #include <QCoreApplication>
 #include <QVarLengthArray>
 #include <QVersionNumber>
 #include <QDebug>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace {
@@ -26,7 +28,8 @@ VkPhysicalDeviceVulkan14Features s_feat14{};
 #endif
 VkPhysicalDeviceFeatures2 s_feat2{};
 
-std::vector<const char *> s_extensions; // string literals from the Vulkan headers
+std::vector<std::string> s_extStrings;  // owns all extension name strings
+std::vector<const char *> s_extensions; // stable pointers into s_extStrings
 
 void cleanupDevice()
 {
@@ -55,10 +58,23 @@ bool initialize()
         return false;
     }
     inst->setApiVersion(qMin(supported, QVersionNumber(1, 4)));
+
+    // VK_EXT_swapchain_colorspace is an INSTANCE extension on Windows —
+    // the Vulkan loader provides it, not the GPU driver. NVIDIA drivers
+    // don't report it in vkEnumerateDeviceExtensionProperties. Without it,
+    // VK_COLOR_SPACE_HDR10_ST2084_EXT is invalid and fullscreen crashes.
+    inst->setExtensions({ VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME });
     if (!inst->create()) {
-        qWarning() << "VulkanDevice: instance creation failed:" << inst->errorCode();
+        qWarning() << "VulkanDevice: instance creation with swapchain_colorspace failed,"
+                   << "retrying without it:" << inst->errorCode();
         delete inst;
-        return false;
+        inst = new QVulkanInstance;
+        inst->setApiVersion(qMin(supported, QVersionNumber(1, 4)));
+        if (!inst->create()) {
+            qWarning() << "VulkanDevice: instance creation failed:" << inst->errorCode();
+            delete inst;
+            return false;
+        }
     }
     QVulkanFunctions *f = inst->functions();
 
@@ -133,9 +149,14 @@ bool initialize()
     s_feat2.features.robustBufferAccess = VK_FALSE;
     s_feat13.robustImageAccess = VK_FALSE;
 
-    // Extensions: swapchain is mandatory for Qt; the rest opportunistic.
+    // Extensions: swapchain is mandatory; the rest are opportunistic.
+    // swapchain_colorspace is needed for HDR10 ST2084 (PQ) color space —
+    // Qt requests it when creating the fullscreen swapchain with HDR on.
+    // Qt's preferred extensions for imported devices are merged in so QRhi
+    // gets everything it needs (present wait, pipeline library, etc.).
     static const char *const kWanted[] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME,
         VK_EXT_HDR_METADATA_EXTENSION_NAME,
 #ifdef VK_EXT_full_screen_exclusive
         VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME,
@@ -146,16 +167,51 @@ bool initialize()
     std::vector<VkExtensionProperties> exts(extCount);
     if (extCount)
         f->vkEnumerateDeviceExtensionProperties(physDev, nullptr, &extCount, exts.data());
-    s_extensions.clear();
+
+    qDebug() << "VulkanDevice: physical device reports" << extCount << "extensions:";
+    for (const VkExtensionProperties &e : exts)
+        qDebug() << "  supported:" << e.extensionName;
+
+    auto isSupported = [&exts](const char *name) -> bool {
+        for (const VkExtensionProperties &e : exts)
+            if (std::strcmp(e.extensionName, name) == 0)
+                return true;
+        return false;
+    };
+
+    s_extStrings.clear();
+    // 1. App's own extensions
     for (const char *want : kWanted) {
-        for (const VkExtensionProperties &e : exts) {
-            if (std::strcmp(e.extensionName, want) == 0) {
-                s_extensions.push_back(want);
-                break;
-            }
-        }
+        if (isSupported(want))
+            s_extStrings.emplace_back(want);
     }
-    if (s_extensions.empty() || std::strcmp(s_extensions[0], VK_KHR_SWAPCHAIN_EXTENSION_NAME) != 0) {
+    // 2. Qt's preferred extensions for imported devices
+    const QByteArrayList qtExts =
+        QRhiVulkanInitParams::preferredExtensionsForImportedDevice();
+    for (const QByteArray &ext : qtExts) {
+        if (!isSupported(ext.constData()))
+            continue;
+        bool dup = false;
+        for (const auto &s : s_extStrings)
+            if (s == ext.constData()) { dup = true; break; }
+        if (!dup)
+            s_extStrings.emplace_back(ext.constData());
+    }
+
+    // Build stable pointer array (pointers into s_extStrings)
+    s_extensions.clear();
+    s_extensions.reserve(s_extStrings.size());
+    for (const auto &s : s_extStrings)
+        s_extensions.push_back(s.c_str());
+
+    // Verify swapchain is present
+    bool hasSwapchain = false;
+    for (const char *ext : s_extensions)
+        if (std::strcmp(ext, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
+            hasSwapchain = true;
+            break;
+        }
+    if (!hasSwapchain) {
         qWarning() << "VulkanDevice: VK_KHR_swapchain not supported";
         inst->destroy();
         delete inst;
@@ -199,6 +255,8 @@ bool initialize()
              << VK_API_VERSION_MINOR(props.apiVersion)
              << "queue family" << qfi
              << "extensions" << uint32_t(s_extensions.size());
+    for (const char *ext : s_extensions)
+        qDebug() << "  ext:" << ext;
     return true;
 }
 

@@ -23,6 +23,7 @@ struct mpv_vulkan_fbo { void *image; int format, usage; int w, h; int out_layout
 #include <QQuickWindow>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QPointer>
 #ifdef Q_OS_WIN
 #include <d3d11.h>
 #endif
@@ -33,6 +34,7 @@ struct mpv_vulkan_fbo { void *image; int format, usage; int w, h; int out_layout
 #include <QVulkanFunctions>
 #include <QSGSimpleTextureNode>
 #include <QtQuick/qsgtexture_platform.h>
+#include <rhi/qrhi.h>
 #endif
 
 namespace {
@@ -97,7 +99,12 @@ private:
     void destroyImage();
 
     QQuickWindow *m_win = nullptr;
-    QSGTexture *m_texture = nullptr;  // wraps m_image
+    QPointer<QSGTexture> m_texture;  // wraps m_rhiTex — QPointer: auto-nulls if Qt deletes it
+    QRhiTexture *m_rhiTex = nullptr;  // wraps m_image with format RGBA16F
+    // createTextureFromRhiTexture transfers ownership: the QSGTexture destroys
+    // m_rhiTex with itself. Until that call, m_rhiTex is ours to delete.
+    bool m_rhiTexOwnedByQsg = false;
+    QRhi *m_rhi = nullptr;            // QRhi that created m_rhiTex (detects swapchain recreation)
     VkImage m_image = VK_NULL_HANDLE;
     VkDeviceMemory m_memory = VK_NULL_HANDLE;
     QSize m_size;
@@ -168,23 +175,25 @@ void VulkanVideoNode::sync(MpvRenderItem *item) {
     mpv_render_context_report_swap(ctx);
     m_valid = true;
 
+    // Tell QRhiTexture the layout mpv left the image in, so Qt records
+    // the correct transition to SHADER_READ_ONLY in its own render pass.
+    m_rhiTex->setNativeLayout(fbo.out_layout);
+
     if (!m_texture) {
-        m_texture = QNativeInterface::QSGVulkanTexture::fromNative(
-            m_image, static_cast<VkImageLayout>(fbo.out_layout), m_win, m_size);
-        setTexture(m_texture);
+        m_texture = m_win->createTextureFromRhiTexture(m_rhiTex);
+        m_rhiTexOwnedByQsg = true; // QSGTexture now owns m_rhiTex (Qt doc)
+        setTexture(m_texture.data());
         if (!m_fboReadyNotified) {
             m_fboReadyNotified = true;
             QMetaObject::invokeMethod(item, "fboReady", Qt::QueuedConnection);
         }
-    } else if (QRhiTexture *rt = m_texture->rhiTexture()) {
-        rt->setNativeLayout(fbo.out_layout);
     }
     markDirty(QSGNode::DirtyMaterial);
 }
 
 // (Re)creates m_image when the node size changes. No-op otherwise.
 void VulkanVideoNode::ensureImage(const QSize &size) {
-    if (m_image != VK_NULL_HANDLE && m_size == size)
+    if (m_rhiTex && m_size == size)
         return;
 
     QRhi *rhi = m_win->rhi();
@@ -197,7 +206,14 @@ void VulkanVideoNode::ensureImage(const QSize &size) {
     if (!df || !f)
         return;
 
-    destroyImage();
+    // Create the replacement image BEFORE destroying the old one. The mpv
+    // fork caches its libplacebo wrapper keyed by VkImage handle; destroying
+    // first lets the driver hand the new image the same handle value, which
+    // makes the fork reuse a wrapper whose VkImageView references the
+    // destroyed image — device lost after a few fullscreen toggles. With
+    // both images alive at once the handles are guaranteed distinct.
+    VkImage newImage = VK_NULL_HANDLE;
+    VkDeviceMemory newMemory = VK_NULL_HANDLE;
 
     VkImageCreateInfo imgInfo{};
     imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -215,13 +231,13 @@ void VulkanVideoNode::ensureImage(const QSize &size) {
     imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    if (df->vkCreateImage(dev, &imgInfo, nullptr, &m_image) != VK_SUCCESS) {
-        m_image = VK_NULL_HANDLE;
+    if (df->vkCreateImage(dev, &imgInfo, nullptr, &newImage) != VK_SUCCESS) {
+        destroyImage();
         return;
     }
 
     VkMemoryRequirements memReq;
-    df->vkGetImageMemoryRequirements(dev, m_image, &memReq);
+    df->vkGetImageMemoryRequirements(dev, newImage, &memReq);
 
     VkPhysicalDeviceMemoryProperties memProps;
     f->vkGetPhysicalDeviceMemoryProperties(static_cast<VkPhysicalDevice>(nat->physDev), &memProps);
@@ -234,8 +250,8 @@ void VulkanVideoNode::ensureImage(const QSize &size) {
         }
     }
     if (memTypeIdx == UINT32_MAX) {
-        df->vkDestroyImage(dev, m_image, nullptr);
-        m_image = VK_NULL_HANDLE;
+        df->vkDestroyImage(dev, newImage, nullptr);
+        destroyImage();
         return;
     }
 
@@ -244,40 +260,78 @@ void VulkanVideoNode::ensureImage(const QSize &size) {
     allocInfo.allocationSize = memReq.size;
     allocInfo.memoryTypeIndex = memTypeIdx;
 
-    if (df->vkAllocateMemory(dev, &allocInfo, nullptr, &m_memory) != VK_SUCCESS) {
-        df->vkDestroyImage(dev, m_image, nullptr);
-        m_image = VK_NULL_HANDLE;
+    if (df->vkAllocateMemory(dev, &allocInfo, nullptr, &newMemory) != VK_SUCCESS) {
+        df->vkDestroyImage(dev, newImage, nullptr);
+        destroyImage();
         return;
     }
-    df->vkBindImageMemory(dev, m_image, m_memory, 0);
+    df->vkBindImageMemory(dev, newImage, newMemory, 0);
+
+    // New image is ready — now retire the old one (waits GPU idle inside).
+    destroyImage();
+    m_image = newImage;
+    m_memory = newMemory;
+
+    // Wrap the VkImage in a QRhiTexture with the correct format (RGBA16F =
+    // R16G16B16A16_SFLOAT). QSGVulkanTexture::fromNative has no format
+    // parameter — it defaults to RGBA8, which reinterprets 16-bit float
+    // pixels as 8-bit unorm, causing color distortion and misalignment.
+    // createFrom() wraps our VkImage while using QRhiTexture's format for
+    // the VkImageView it creates internally.
+    m_rhiTex = rhi->newTexture(QRhiTexture::RGBA16F, size, 1,
+        QRhiTexture::UsedAsTransferSource | QRhiTexture::UsedWithLoadStore);
+    QRhiTexture::NativeTexture src{};
+    src.object = reinterpret_cast<quint64>(m_image);
+    src.layout = static_cast<int>(VK_IMAGE_LAYOUT_GENERAL);
+    m_rhiTex->createFrom(src);
+
+    m_rhi = rhi;  // track which QRhi created these resources
     m_size = size;
     m_valid = false; // fresh image — needs a real mpv render before display
 }
 
 void VulkanVideoNode::destroyImage() {
-    if (m_image == VK_NULL_HANDLE && !m_texture)
+    if (m_image == VK_NULL_HANDLE && !m_rhiTex && !m_texture)
         return;
     QRhi *rhi = m_win ? m_win->rhi() : nullptr;
-    auto *nat = rhi ? static_cast<const QRhiVulkanNativeHandles *>(rhi->nativeHandles()) : nullptr;
+    // Detect QRhi recreation (fullscreen swapchain rebuild): if the QRhi
+    // that created our resources is gone, they were already destroyed by Qt.
+    const bool rhiChanged = (m_rhi && rhi && m_rhi != rhi);
+    auto *nat = (!rhiChanged && rhi) ? static_cast<const QRhiVulkanNativeHandles *>(rhi->nativeHandles()) : nullptr;
     QVulkanDeviceFunctions *df = (nat && nat->dev && nat->inst)
         ? nat->inst->deviceFunctions(static_cast<VkDevice>(nat->dev)) : nullptr;
-    if (df && m_image) {
+
+    // Wait for GPU idle — frames may still be sampling this image
+    // (scenegraph invalidation on fullscreen toggles lands here; resize too).
+    if (df)
+        df->vkDeviceWaitIdle(static_cast<VkDevice>(nat->dev));
+
+    // Destroy in reverse creation order: QSGTexture → QRhiTexture (VkImageView)
+    // → VkImage.  VkImageView must be destroyed before its VkImage per spec.
+    // createTextureFromRhiTexture transferred ownership of m_rhiTex to the
+    // QSGTexture — deleting the QSGTexture destroys m_rhiTex with it, so it
+    // must NOT be deleted again here (double free = heap corruption; this was
+    // the fullscreen-toggle crash). QPointer: m_texture is auto-null if Qt
+    // already deleted it (which also took m_rhiTex along).
+    delete m_texture.data();
+    m_texture = nullptr;
+
+    if (m_rhiTex) {
+        if (!m_rhiTexOwnedByQsg && !rhiChanged && rhi)
+            delete m_rhiTex;  // no QSGTexture was ever created around it
+        // else: destroyed by the QSGTexture above, or gone with the old QRhi
+        m_rhiTex = nullptr;
+    }
+    m_rhiTexOwnedByQsg = false;
+
+    if (df && m_image != VK_NULL_HANDLE) {
         VkDevice dev = static_cast<VkDevice>(nat->dev);
-        // Frames still in flight may be sampling this image (scenegraph
-        // invalidation on fullscreen toggles lands here; resize too).
-        // Destroying it unguarded is a device loss.
-        df->vkDeviceWaitIdle(dev);
         df->vkDestroyImage(dev, m_image, nullptr);
         df->vkFreeMemory(dev, m_memory, nullptr);
     }
     m_image = VK_NULL_HANDLE;
     m_memory = VK_NULL_HANDLE;
-    // The base node may keep the stale texture pointer (setTexture(nullptr)
-    // is not allowed); callers never let the node render in that state —
-    // either a new texture is set right after (resize) or the node is
-    // dropped by updatePaintNode (hasVideoTexture() == false).
-    delete m_texture;
-    m_texture = nullptr;
+    m_rhi = nullptr;
     m_valid = false;
 }
 #endif // QT_CONFIG(vulkan)

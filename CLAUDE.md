@@ -242,6 +242,9 @@ cmake --build /root/myproject/mfplayer/build
     - 历史结论修正：2026-07 早前"跨 command buffer barrier 成链在 NVIDIA 不可行"的结论是在 sync2 未启用（每个 barrier2 调用都是 UB）的污染环境里得出的，不作数；规范上同队列跨 buffer 成链合法
     - mpv fork 侧（third_party/mpv-source/video/out/gpu_next/context.c）：done_frame_vulkan 不调用 pl_gpu_finish()（渲染循环里"seriously disadvised"）；wrapped_tex 跨帧缓存 + persistent_target_tex 标记（libmpv_gpu_next.h/.c）别删；hold_ex out_layout 模式只查询不转换、经 mpv_vulkan_fbo.out_layout 回传；guard_sem 空提交防 WAR。改 render_vulkan.h 的结构体（out_layout/enabled_features 都是尾部追加）→ dll 和 exe 必须一起重编，头文件同步 cp 到 mpv-msvc/include
     - 销毁 VkImage 前必须 vkDeviceWaitIdle（VulkanVideoNode::destroyImage，resize 和节点析构/场景图失效两条路都走它）——异步化后没有每帧排空兜底，2026-07 全屏切换 device lost 就是裸销毁炸的
+    - **createTextureFromRhiTexture 会拿走 QRhiTexture 所有权**（Qt 文档明示"destroyed together"）——destroyImage 靠 m_rhiTexOwnedByQsg 标记决定是否手动 delete m_rhiTex，别删标记改回双删（2026-07 全屏堆损坏闪退根因）
+    - **ensureImage 必须先创建新 VkImage 再销毁旧的**——fork 的 wrap_fbo 缓存用句柄值当键，先销毁会让驱动复用句柄、dll 拿死 VkImageView 渲染（2026-07 反复全屏 device lost 根因）；fork 侧缓存判断的宽高比较是配套保险，别删
+    - **fork perfdata() 必须清零输出结构体**（libmpv_gpu_next.c）——vo_libmpv 只要钩子存在就报 VO_TRUE，上层结构体未初始化，不清零则按 i 查 vo-passes 越界崩（2026-07 stats 闪退根因，与 Vulkan 无关）
     - 三个后端调 mpv_render_context_render 都必须传 BLOCK_FOR_TARGET_TIME=0——缺省 1 会睡到该帧目标显示时刻，UI 被锁到视频帧率（2026-07 Vulkan"UI 跟着视频走"根因）
   - PlayerControls: progressSlider.value 只在 `_lastSecond` 变化时更新。别移回每帧赋值
   - CacheStore: updateItemFieldInCache 找到 item 直接 `return`。别删外层 return

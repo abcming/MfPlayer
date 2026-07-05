@@ -92,7 +92,7 @@ $env:PYTHONIOENCODING = "utf-8:replace"
 $MesonArgs = @(
     "setup", $BuildDir,
     "--prefix=$InstallDir",
-    "--buildtype=release",
+    "--buildtype=debugoptimized",
     "--pkg-config-path=$PkgConfigDir",
     "-Ddefault_library=shared",
     "-Dlibmpv=true",
