@@ -19,7 +19,7 @@ Emby desktop media player powered by Qt 6 QML + libmpv.
 ## Screenshots
 
 ![主页](https://img.mirane.cc/docs/1783420669956.png)
-![详情页](img.mirane.cc/docs/1783420647709.png)
+![详情页](https://img.mirane.cc/docs/1783420647709.png)
 
 ## Building (Windows, MSVC)
 
