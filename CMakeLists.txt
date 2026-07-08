@@ -24,6 +24,7 @@ set(QT_FIND_PRIVATE_MODULES ON)
 find_package(Qt6 6.8 REQUIRED COMPONENTS Quick Qml QuickControls2 Network OpenGL Sql ShaderTools Gui)
 qt_standard_project_setup()
 qt_policy(SET QTP0004 NEW)
+qt_policy(SET QTP0001 NEW)
 
 if(WIN32)
     set(MPV_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/mpv-msvc/include")
@@ -208,7 +209,7 @@ endif()
 
 set_target_properties(mfplayer_app PROPERTIES
     OUTPUT_NAME "MfPlayer"
-    WIN32_EXECUTABLE TRUE
+    WIN32_EXECUTABLE FALSE
 )
 
 add_custom_command(TARGET mfplayer_app POST_BUILD
