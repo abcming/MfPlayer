@@ -23,10 +23,7 @@ QtObject {
     readonly property color modalOverlay: "#80000000"
     readonly property color popupBg: Qt.rgba(18/255, 18/255, 18/255, 0.75)
 
-    readonly property int radiusSmall: 4
     readonly property int radiusMedium: 6
-    readonly property int radiusLarge: 8
-    readonly property int radiusRound: 18
 
     readonly property int scrollAnimDuration: 140
     readonly property int popupEnterDuration: 200

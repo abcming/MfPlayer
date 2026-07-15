@@ -22,10 +22,6 @@ class MpvController : public QObject {
     Q_PROPERTY(QVariantList tracks READ tracks NOTIFY tracksChanged FINAL)
     Q_PROPERTY(int currentSid READ currentSid NOTIFY sidChanged FINAL)
     Q_PROPERTY(int currentAid READ currentAid NOTIFY aidChanged FINAL)
-    Q_PROPERTY(QVariantMap videoOutParams READ videoOutParams NOTIFY videoOutParamsChanged FINAL)
-    Q_PROPERTY(QVariantMap videoParams READ videoParams NOTIFY videoParamsChanged FINAL)
-    Q_PROPERTY(QVariantMap audioOutParams READ audioOutParams NOTIFY audioOutParamsChanged FINAL)
-    Q_PROPERTY(QVariantMap stats READ stats NOTIFY statsChanged FINAL)
     Q_PROPERTY(QVariantList chapters READ chapters NOTIFY chaptersChanged FINAL)
     Q_PROPERTY(int currentChapter READ currentChapter NOTIFY chapterChanged FINAL)
     Q_PROPERTY(double speed READ speed NOTIFY speedChanged FINAL)
@@ -65,10 +61,6 @@ public:
     QVariantList tracks() const { return m_tracks; }
     int currentSid() const { return m_sid; }
     int currentAid() const { return m_aid; }
-    QVariantMap videoOutParams() const { return m_videoOutParams; }
-    QVariantMap videoParams() const { return m_videoParams; }
-    QVariantMap audioOutParams() const { return m_audioOutParams; }
-    QVariantMap stats() const { return m_stats; }
     QVariantList chapters() const { return m_chapters; }
     int currentChapter() const { return m_currentChapter; }
     double speed() const { return m_speed; }
@@ -88,10 +80,6 @@ signals:
     void tracksChanged();
     void sidChanged();
     void aidChanged();
-    void videoOutParamsChanged();
-    void videoParamsChanged();
-    void audioOutParamsChanged();
-    void statsChanged();
     void chaptersChanged();
     void chapterChanged();
     void endOfFile();
@@ -102,10 +90,7 @@ signals:
 
 private:
     void onMpvEvents();
-    bool handleStatsProperty(const char *name, mpv_event_property *prop, bool &statsDirty);
-    bool handleNodeProperty(const char *name, mpv_event_property *prop,
-                            bool &videoOutDirty, bool &videoDirty, bool &audioOutDirty);
-    void observeStatsProperties(bool observe);
+    bool handleNodeProperty(const char *name, mpv_event_property *prop);
     static void wakeup(void *ctx);
     static QVariant mpvNodeToVariant(const mpv_node *node);
 
@@ -134,14 +119,9 @@ private:
     QVariantList m_tracks;
     int m_sid = -1;
     int m_aid = -1;
-    QVariantMap m_videoOutParams;
-    QVariantMap m_videoParams;
-    QVariantMap m_audioOutParams;
-    QVariantMap m_stats;
     QVariantList m_chapters;
     int m_currentChapter = -1;
     double m_pendingStartSeconds = 0;
     double m_speed = 1.0;
     QString m_mpvVersion;
-    bool m_statsObserving = false;
 };

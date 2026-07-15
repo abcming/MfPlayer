@@ -19,7 +19,6 @@ QtObject {
     readonly property string searchPlaceholder: "搜索影片、节目、人物..."
     readonly property string searchRecommend: "推荐"
     readonly property string searchSeries: "节目"
-    readonly property string searchEpisodes: "集"
     readonly property string searchMovies: "影片"
     readonly property string searchPeople: "人物"
 
@@ -42,7 +41,6 @@ QtObject {
     readonly property string svrRefreshCache: "刷新缓存"
     readonly property string svrDisconnect: "退出登录"
     readonly property string svrSkipSslVerify: "跳过 SSL 证书验证"
-    readonly property string hdrPeakBrightness: "HDR 峰值亮度"
     readonly property string svrDefaultUser: "用户"
     readonly property string svrNotLoggedIn: "未登录"
     readonly property string svrSettings: "设置"
@@ -53,13 +51,11 @@ QtObject {
     readonly property string homeLatestPrefix: "最新"
     readonly property string homeNotLoggedInPrompt: "登录 Emby 服务器，开始播放"
     readonly property string homeNotLoggedInHint: "点击左下角头像区域添加服务器"
-    readonly property string homeSearchPlaceholder: "搜索电影、电视剧..."
     readonly property string homeLetterIndexAll: "全"
 
     // ── 媒体库 Tab 栏 ──
     readonly property string libTabShows: "节目"
     readonly property string libTabMovies: "影片"
-    readonly property string libTabAll: "全部"
     readonly property string libTabSuggestions: "推荐"
 
     readonly property string libTabFavorites: "收藏"
@@ -74,13 +70,6 @@ QtObject {
     readonly property string sortByRating: "评分"
     readonly property string sortByDateAdded: "添加时间"
     readonly property string sortByPlayed: "播放时间"
-    readonly property string sortAscending: "升序"
-    readonly property string sortDescending: "降序"
-    readonly property string filterTitle: "筛选"
-    readonly property string filterAll: "全部"
-    readonly property string filterPlayed: "已看"
-    readonly property string filterUnplayed: "未看"
-    readonly property string filterFavorites: "收藏"
 
     // ── 详情页 ──
     readonly property string detailPlay: "播放"
@@ -89,7 +78,6 @@ QtObject {
     readonly property string detailCastAndCrew: "演职人员"
     readonly property string detailStudios: "工作室"
     readonly property string detailSimilar: "相似推荐"
-    readonly property string detailFilmography: "全部作品"
     readonly property string detailMediaInfo: "媒体信息"
     readonly property string detailSelectSeason: "选择季"
     readonly property string detailStatusContinuing: "● 连载中"
@@ -119,11 +107,9 @@ QtObject {
     readonly property string playerChapterPrefix: "章节 "
 
     // ── 设置 ──
-    readonly property string settingsTitle: "设置"
     readonly property string settingsGeneral: "通用"
     readonly property string settingsKeys: "按键"
     readonly property string settingsAdvanced: "高级"
-    readonly property string settingsPlayback: "播放"
     readonly property string settingsAudioLang: "首选音频语言"
     readonly property string settingsSubLang: "首选字幕语言"
     readonly property string settingsActionAfterEnd: "播放结束后"

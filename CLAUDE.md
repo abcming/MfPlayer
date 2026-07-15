@@ -24,7 +24,7 @@ platform/rendering/mpv/
 ui/qml/
     theme/      → Theme/Str/Nav (Singleton)
     pages/      → Main/Browse/Detail/Player
-    views/      → HomeView/LibraryGridView/PlayerControls/DebugOverlay/SuggestionsView
+    views/      → HomeView/LibraryGridView/PlayerControls/SuggestionsView
     components/ → HdrPqOverlay/CachedImage/RoundedImage/TrackSelector/SeriesSection...
     shaders/    → hdr_pq.frag/hdr_pq.vert (sRGB→PQ), roundedmask.frag
 ```
@@ -211,9 +211,10 @@ ioPool().start([guard, ...]() {
      现在引入只是给 flag 改名, 无功能收益。
 4. **Playback.mpv 泄露**: 业务部分已还 (2026-07)。speed/setSpeed/tracks/currentSid/
    chapters/currentChapter/setSlang/setAlang/addSubtitleFile 经 PlaybackController 转发,
-   QML 业务代码用 `Playback.xxx`。`Playback.mpv` 仅保留诊断直连 (DebugOverlay 的
-   params/stats, toggleStats, mpvVersion) 和渲染直连 (PlayerPage `player: Playback.mpv`)
-   — 刻意保留, 不要"补全"转发。
+   QML 业务代码用 `Playback.xxx`。`Playback.mpv` 仅保留诊断直连 (toggleStats,
+   mpvVersion) 和渲染直连 (PlayerPage `player: Playback.mpv`) — 刻意保留, 不要"补全"转发。
+   (DebugOverlay 及其 params/stats 侦测链已于 2026-07 整体拆除: 组件从未被实例化,
+   observeStatsProperties 却常开, 属白耗。需要诊断时按 I 用 mpv 内置 stats。)
 
 ## 构建与部署
 

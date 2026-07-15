@@ -98,19 +98,6 @@ MpvController::MpvController(QObject *parent) : QObject(parent) {
   mpv_observe_property(m_mpv, 0, "track-list", MPV_FORMAT_NODE);
   mpv_observe_property(m_mpv, 0, "sid", MPV_FORMAT_INT64);
   mpv_observe_property(m_mpv, 0, "aid", MPV_FORMAT_INT64);
-  mpv_observe_property(m_mpv, 0, "video-out-params", MPV_FORMAT_NODE);
-  mpv_observe_property(m_mpv, 0, "video-params", MPV_FORMAT_NODE);
-  mpv_observe_property(m_mpv, 0, "video-params/colormatrix", MPV_FORMAT_STRING);
-  mpv_observe_property(m_mpv, 0, "video-params/colorprim", MPV_FORMAT_STRING);
-  mpv_observe_property(m_mpv, 0, "video-params/colortransfer",
-                       MPV_FORMAT_STRING);
-  mpv_observe_property(m_mpv, 0, "audio-out-params", MPV_FORMAT_NODE);
-  mpv_observe_property(m_mpv, 0, "video-codec", MPV_FORMAT_STRING);
-  mpv_observe_property(m_mpv, 0, "audio-codec", MPV_FORMAT_STRING);
-  mpv_observe_property(m_mpv, 0, "container-fps", MPV_FORMAT_DOUBLE);
-  mpv_observe_property(m_mpv, 0, "cache-total", MPV_FORMAT_INT64);
-  mpv_observe_property(m_mpv, 0, "demuxer-cache-duration", MPV_FORMAT_DOUBLE);
-  mpv_observe_property(m_mpv, 0, "hwdec-current", MPV_FORMAT_STRING);
   mpv_observe_property(m_mpv, 0, "chapter-list", MPV_FORMAT_NODE);
   mpv_observe_property(m_mpv, 0, "chapter", MPV_FORMAT_INT64);
   mpv_observe_property(m_mpv, 0, "speed", MPV_FORMAT_DOUBLE);
@@ -118,8 +105,6 @@ MpvController::MpvController(QObject *parent) : QObject(parent) {
   m_mpvVersion =
       QString::fromUtf8(mpv_get_property_string(m_mpv, "mpv-version"));
   mpv_set_wakeup_callback(m_mpv, wakeup, this);
-
-  observeStatsProperties(true);
 }
 
 MpvController::~MpvController() {
@@ -397,10 +382,6 @@ void MpvController::stop() {
   m_tracks.clear();
   m_sid = -1;
   m_aid = -1;
-  m_videoOutParams.clear();
-  m_videoParams.clear();
-  m_audioOutParams.clear();
-  m_stats.clear();
   m_chapters.clear();
   m_currentChapter = -1;
   emit hasVideoChanged();
@@ -412,10 +393,6 @@ void MpvController::stop() {
   emit aidChanged();
   emit chaptersChanged();
   emit chapterChanged();
-  emit videoOutParamsChanged();
-  emit videoParamsChanged();
-  emit audioOutParamsChanged();
-  emit statsChanged();
 }
 
 void MpvController::seek(double pos) {
@@ -496,42 +473,9 @@ void MpvController::toggleStats() {
   mpv_command_async(m_mpv, 0, args);
 }
 
-void MpvController::observeStatsProperties(bool observe) {
-  if (!m_mpv || observe == m_statsObserving)
-    return;
-  m_statsObserving = observe;
-  // Use unique reply_userdata (0x50xx) so we can unobserve selectively
-  constexpr uint64_t STATS_BASE = 0x5000;
-  if (observe) {
-    mpv_observe_property(m_mpv, STATS_BASE + 0, "estimated-vf-fps",
-                         MPV_FORMAT_DOUBLE);
-    mpv_observe_property(m_mpv, STATS_BASE + 1, "display-fps",
-                         MPV_FORMAT_DOUBLE);
-    mpv_observe_property(m_mpv, STATS_BASE + 2, "decoder-frame-drop-count",
-                         MPV_FORMAT_INT64);
-    mpv_observe_property(m_mpv, STATS_BASE + 3, "decoder-frame-delayed-count",
-                         MPV_FORMAT_INT64);
-    mpv_observe_property(m_mpv, STATS_BASE + 4, "cache-speed",
-                         MPV_FORMAT_INT64);
-    mpv_observe_property(m_mpv, STATS_BASE + 5, "cache-used", MPV_FORMAT_INT64);
-    mpv_observe_property(m_mpv, STATS_BASE + 6, "packet-video-bitrate",
-                         MPV_FORMAT_INT64);
-    mpv_observe_property(m_mpv, STATS_BASE + 7, "packet-audio-bitrate",
-                         MPV_FORMAT_INT64);
-    mpv_observe_property(m_mpv, STATS_BASE + 8, "avsync", MPV_FORMAT_DOUBLE);
-  } else {
-    for (int i = 0; i < 9; ++i)
-      mpv_unobserve_property(m_mpv, STATS_BASE + i);
-  }
-}
-
 void MpvController::onMpvEvents() {
   if (!m_mpv)
     return;
-  bool statsDirty = false;
-  bool videoOutDirty = false;
-  bool videoDirty = false;
-  bool audioOutDirty = false;
   while (true) {
     mpv_event *event = mpv_wait_event(m_mpv, 0);
     if (event->event_id == MPV_EVENT_NONE)
@@ -563,9 +507,7 @@ void MpvController::onMpvEvents() {
       } else if (!strcmp(name, "speed") && prop->format == MPV_FORMAT_DOUBLE) {
         m_speed = *static_cast<double *>(prop->data);
         emit speedChanged();
-      } else if (!handleNodeProperty(name, prop, videoOutDirty, videoDirty,
-                                     audioOutDirty) &&
-                 !handleStatsProperty(name, prop, statsDirty)) {
+      } else if (!handleNodeProperty(name, prop)) {
         // unhandled property
       }
       break;
@@ -615,93 +557,10 @@ void MpvController::onMpvEvents() {
       break;
     }
   }
-  if (videoOutDirty)
-    emit videoOutParamsChanged();
-  if (videoDirty)
-    emit videoParamsChanged();
-  if (audioOutDirty)
-    emit audioOutParamsChanged();
-  if (statsDirty)
-    emit statsChanged();
-}
-
-bool MpvController::handleStatsProperty(const char *name,
-                                        mpv_event_property *prop,
-                                        bool &statsDirty) {
-  if (!strcmp(name, "video-codec") && prop->format == MPV_FORMAT_STRING) {
-    m_stats["videoCodec"] =
-        QString::fromUtf8(*static_cast<char **>(prop->data));
-  } else if (!strcmp(name, "audio-codec") &&
-             prop->format == MPV_FORMAT_STRING) {
-    m_stats["audioCodec"] =
-        QString::fromUtf8(*static_cast<char **>(prop->data));
-  } else if (!strcmp(name, "container-fps") &&
-             prop->format == MPV_FORMAT_DOUBLE) {
-    m_stats["containerFps"] = *static_cast<double *>(prop->data);
-  } else if (!m_statsObserving) {
-    return false;
-  } else if (!strcmp(name, "estimated-vf-fps") &&
-             prop->format == MPV_FORMAT_DOUBLE) {
-    m_stats["estimatedFps"] = *static_cast<double *>(prop->data);
-  } else if (!strcmp(name, "display-fps") &&
-             prop->format == MPV_FORMAT_DOUBLE) {
-    m_stats["displayFps"] = *static_cast<double *>(prop->data);
-  } else if (!strcmp(name, "decoder-frame-drop-count") &&
-             prop->format == MPV_FORMAT_INT64) {
-    m_stats["frameDrops"] =
-        static_cast<qint64>(*static_cast<int64_t *>(prop->data));
-  } else if (!strcmp(name, "decoder-frame-delayed-count") &&
-             prop->format == MPV_FORMAT_INT64) {
-    m_stats["frameDelayed"] =
-        static_cast<qint64>(*static_cast<int64_t *>(prop->data));
-  } else if (!strcmp(name, "cache-speed") && prop->format == MPV_FORMAT_INT64) {
-    m_stats["cacheSpeed"] =
-        static_cast<qint64>(*static_cast<int64_t *>(prop->data));
-  } else if (!strcmp(name, "cache-used") && prop->format == MPV_FORMAT_INT64) {
-    m_stats["cacheUsed"] =
-        static_cast<qint64>(*static_cast<int64_t *>(prop->data));
-  } else if (!strcmp(name, "cache-total") && prop->format == MPV_FORMAT_INT64) {
-    m_stats["cacheTotal"] =
-        static_cast<qint64>(*static_cast<int64_t *>(prop->data));
-  } else if (!strcmp(name, "demuxer-cache-duration") &&
-             prop->format == MPV_FORMAT_DOUBLE) {
-    m_stats["cacheDuration"] = *static_cast<double *>(prop->data);
-  } else if (!strcmp(name, "packet-video-bitrate") &&
-             prop->format == MPV_FORMAT_INT64) {
-    m_stats["videoBitrate"] =
-        static_cast<qint64>(*static_cast<int64_t *>(prop->data));
-  } else if (!strcmp(name, "packet-audio-bitrate") &&
-             prop->format == MPV_FORMAT_INT64) {
-    m_stats["audioBitrate"] =
-        static_cast<qint64>(*static_cast<int64_t *>(prop->data));
-  } else if (!strcmp(name, "hwdec-current") &&
-             prop->format == MPV_FORMAT_STRING) {
-    m_stats["hwdec"] = QString::fromUtf8(*static_cast<char **>(prop->data));
-  } else if (!strcmp(name, "video-params/colormatrix") &&
-             prop->format == MPV_FORMAT_STRING) {
-    m_stats["srcColorMatrix"] =
-        QString::fromUtf8(*static_cast<char **>(prop->data));
-  } else if (!strcmp(name, "video-params/colorprim") &&
-             prop->format == MPV_FORMAT_STRING) {
-    m_stats["srcColorPrim"] =
-        QString::fromUtf8(*static_cast<char **>(prop->data));
-  } else if (!strcmp(name, "video-params/colortransfer") &&
-             prop->format == MPV_FORMAT_STRING) {
-    m_stats["srcColorTransfer"] =
-        QString::fromUtf8(*static_cast<char **>(prop->data));
-  } else if (!strcmp(name, "avsync") && prop->format == MPV_FORMAT_DOUBLE) {
-    m_stats["avsync"] = *static_cast<double *>(prop->data);
-  } else {
-    return false;
-  }
-  statsDirty = true;
-  return true;
 }
 
 bool MpvController::handleNodeProperty(const char *name,
-                                       mpv_event_property *prop,
-                                       bool &videoOutDirty, bool &videoDirty,
-                                       bool &audioOutDirty) {
+                                       mpv_event_property *prop) {
   if (!strcmp(name, "track-list") && prop->format == MPV_FORMAT_NODE) {
     auto *node = static_cast<mpv_node *>(prop->data);
     QVariantList all = mpvNodeToVariant(node).toList();
@@ -713,20 +572,6 @@ bool MpvController::handleNodeProperty(const char *name,
         m_tracks.append(m);
     }
     emit tracksChanged();
-  } else if (!strcmp(name, "video-out-params") &&
-             prop->format == MPV_FORMAT_NODE) {
-    auto *node = static_cast<mpv_node *>(prop->data);
-    m_videoOutParams = mpvNodeToVariant(node).toMap();
-    videoOutDirty = true;
-  } else if (!strcmp(name, "video-params") && prop->format == MPV_FORMAT_NODE) {
-    auto *node = static_cast<mpv_node *>(prop->data);
-    m_videoParams = mpvNodeToVariant(node).toMap();
-    videoDirty = true;
-  } else if (!strcmp(name, "audio-out-params") &&
-             prop->format == MPV_FORMAT_NODE) {
-    auto *node = static_cast<mpv_node *>(prop->data);
-    m_audioOutParams = mpvNodeToVariant(node).toMap();
-    audioOutDirty = true;
   } else if (!strcmp(name, "chapter-list") && prop->format == MPV_FORMAT_NODE) {
     auto *node = static_cast<mpv_node *>(prop->data);
     QVariantList raw = mpvNodeToVariant(node).toList();

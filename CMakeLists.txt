@@ -137,7 +137,6 @@ qt_add_qml_module(mfplayer_app
         ui/qml/components/RoundedImage.qml
         ui/qml/components/TrackSelector.qml
         ui/qml/components/HorizontalMediaRow.qml
-        ui/qml/views/DebugOverlay.qml
         ui/qml/components/Icon.qml
         ui/qml/components/StyledPopup.qml
         ui/qml/components/StudiosSection.qml
