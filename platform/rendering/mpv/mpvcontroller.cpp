@@ -65,6 +65,12 @@ MpvController::MpvController(QObject *parent) : QObject(parent) {
   mpv_set_option_string(m_mpv, "interpolation", "yes");
   mpv_set_option_string(m_mpv, "tscale", "oversample");
   mpv_set_option_string(m_mpv, "deband", "yes");
+  // 把随包思源黑体喂给 libass: 无样式字幕 (SRT) 与缺字回退默认用它,
+  // 不再依赖系统雅黑。ASS 自带样式指定的字体不受影响。
+  const QByteArray fontsDir =
+      (QCoreApplication::applicationDirPath() + "/fonts").toUtf8();
+  mpv_set_option_string(m_mpv, "fonts-dir", fontsDir.constData());
+  mpv_set_option_string(m_mpv, "sub-font", "Source Han Sans SC");
   // 字幕不烘进视频帧 (blend-subtitles=no 默认): 在输出分辨率直接合成,
   // 避免随视频缩放发糊, sub-pos 也能独立于视频帧移动。
   // HDR 亮度正确性由 gpu-next 的 overlay 色彩管理保证, 不再需要 blend。
