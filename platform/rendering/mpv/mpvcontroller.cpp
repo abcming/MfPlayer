@@ -71,6 +71,9 @@ MpvController::MpvController(QObject *parent) : QObject(parent) {
   mpv_set_option_string(m_mpv, "embeddedfonts", "yes");
   // 让 sub-pos/sub-margin-y 对 ASS 对白生效 (\pos 定位的特效字幕不受影响)
   mpv_set_option_string(m_mpv, "sub-ass-force-margins", "yes");
+  // PGS 等图形字幕画布按整个窗口 (含黑边) 拉伸, 而不是贴到视频矩形:
+  // 2.39:1 影片的 PGS 按 16:9 母盘制作, 贴视频矩形会把底部行顶进画面中间
+  mpv_set_option_string(m_mpv, "stretch-image-subs-to-screen", "yes");
   mpv_set_option_string(m_mpv, "sub-auto", "fuzzy");
   mpv_set_option_string(m_mpv, "keep-open", "yes");
   mpv_set_option_string(m_mpv, "demuxer-max-bytes", "500MiB");
