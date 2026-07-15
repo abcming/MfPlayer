@@ -120,8 +120,9 @@ QML UI (sRGB) → RGBA16F FBO → hdr_pq.vert + hdr_pq.frag (sRGB→Rec.709→Re
 - 启动时 Main.qml 有黑色遮罩层 (`hdrStartupCover`) 防过曝，检测完成后淡出
 - SDR 系统自动回退: `_hdrActive=false` → `layer.enabled=false` → 零 shader 开销
 - hdr_pq.frag 做完整 unpremultiply→变换→re-premultiply (2026-07 定稿): premultiplied 直接过
-  PQ 曲线会让 AA 边缘变暗 (文字发虚)、半透明面板偏红。前提是 RGBA16F layer (除法无量化噪点)
-  + main.cpp 强制 CurveTextRendering (灰度 AA, 无 ClearType 子像素)。三件套绑定, 别单独回退任何一件
+  PQ 曲线会让 AA 边缘变暗 (文字发虚)、半透明面板偏红。RGBA16F layer 下除法无量化噪点, 别回退。
+  文字渲染保持 Qt 默认 — Curve (无 hinting 发糊) 和 Native+灰度AA (发虚) 都试过且被封铭否决,
+  残余的一点点子像素红边是接受的取舍, 别再"修"
 - 字幕不走 blend-subtitles (2026-07 拆除): 输出分辨率直接合成才清晰, sub-pos 才能独立移动;
   HDR 下字幕亮度由 gpu-next overlay 色彩管理保证, 别改回 blend-subtitles=video
 - hdr_pq.vert 负责处理全屏三角形顶点变换，与 frag 配对使用
