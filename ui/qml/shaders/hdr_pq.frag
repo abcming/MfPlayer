@@ -38,18 +38,23 @@ float linearToPq(float c) {
 void main() {
     vec4 c = texture(source, qt_TexCoord0);
 
-    // Skip unpremultiply: QML renders premultiplied-alpha, and dividing by
-    // c.a amplifies quantization noise on ClearType edges -> color fringing.
-    // Converting premultiplied RGB directly makes edges slightly darker
-    // instead of tinted -- visually indistinguishable for UI text.
-    vec3 lin709  = vec3(srgbToLinear(c.r),
-                        srgbToLinear(c.g),
-                        srgbToLinear(c.b));
+    // Unpremultiply before the nonlinear transforms: running sRGB->PQ math
+    // on premultiplied RGB darkens AA edges (soft-looking text) and the
+    // steep low-end PQ slope amplifies channel error on semi-transparent
+    // surfaces into a warm tint. The RGBA16F layer keeps the division
+    // noise-free, and text uses grayscale curve rendering (no ClearType
+    // subpixels), so the old fringing objection no longer applies.
+    vec3 rgb = c.a > 0.0 ? c.rgb / c.a : vec3(0.0);
+
+    vec3 lin709  = vec3(srgbToLinear(rgb.r),
+                        srgbToLinear(rgb.g),
+                        srgbToLinear(rgb.b));
     vec3 lin2020 = rec709ToRec2020(lin709);
     vec3 nits    = lin2020 * ubuf.sdrWhiteNits;
     vec3 pq      = vec3(linearToPq(nits.r / 10000.0),
                         linearToPq(nits.g / 10000.0),
                         linearToPq(nits.b / 10000.0));
 
-    fragColor = vec4(pq, c.a) * ubuf.qt_Opacity;
+    // Re-premultiply: Qt blends layer output as premultiplied alpha.
+    fragColor = vec4(pq * c.a, c.a) * ubuf.qt_Opacity;
 }

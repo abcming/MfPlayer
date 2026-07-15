@@ -76,6 +76,11 @@ int main(int argc, char *argv[]) {
     }
     QQuickStyle::setStyle("Fusion");
 
+    // 灰度抗锯齿的曲线文字渲染: HDR 下 UI 经 PQ shader 处理, ClearType 的
+    // R/G/B 子像素边缘会被 PQ 非线性放大成红边; 曲线渲染无子像素、任意
+    // 缩放锐利, 在 layer FBO 里也不发虚
+    QQuickWindow::setTextRenderType(QQuickWindow::CurveTextRendering);
+
     QGuiApplication app(argc, argv);
     app.setApplicationName(MFPLAYER_APP_NAME);
     app.setWindowIcon(QIcon(":/mfplayer/resources/appicon.ico"));
