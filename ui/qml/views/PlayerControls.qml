@@ -104,22 +104,17 @@ Rectangle {
                 onTriggered: Playback.seek(progressSlider.value)
             }
 
-            property int _snappedChapter: -1
             property bool _snapping: false
 
             function snapToChapter(val) {
                 var chapters = Playback.chapters || []
                 if (chapters.length === 0) return val
                 var dur = Playback.duration || 1
-                var snapDist = Math.max(dur * 0.005, 3)
-                var unstickDist = snapDist * 1.5
-
-                if (_snappedChapter >= 0 && _snappedChapter < chapters.length) {
-                    var ct = chapters[_snappedChapter].time || 0
-                    if (ct > 0 && ct < dur && Math.abs(val - ct) < unstickDist)
-                        return ct
-                    _snappedChapter = -1
-                }
+                // Snap radius in pixels, not % of duration — a 3h movie once
+                // had a 58s (0.5%) radius with 1.5x escape hysteresis, so the
+                // handle froze for ~90s of timeline and jumped on breakout.
+                // Symmetric radius: escaping moves the handle at most 8px.
+                var snapDist = 8 * dur / Math.max(1, availableWidth)
 
                 var best = val, bestDist = snapDist
                 for (var i = 0; i < chapters.length; i++) {
@@ -129,7 +124,6 @@ Rectangle {
                     if (dist < bestDist) {
                         bestDist = dist
                         best = t
-                        _snappedChapter = i
                     }
                 }
                 return best
@@ -149,7 +143,6 @@ Rectangle {
             onPressedChanged: {
                 if (!pressed) {
                     var finalValue = snapToChapter(value)
-                    _snappedChapter = -1
                     seekThrottle.stop()
                     Playback.seek(finalValue)
                 }
