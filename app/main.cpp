@@ -76,14 +76,19 @@ int main(int argc, char *argv[]) {
     }
     QQuickStyle::setStyle("Fusion");
 
-    // 灰度抗锯齿的曲线文字渲染: HDR 下 UI 经 PQ shader 处理, ClearType 的
-    // R/G/B 子像素边缘会被 PQ 非线性放大成红边; 曲线渲染无子像素、任意
-    // 缩放锐利, 在 layer FBO 里也不发虚
-    QQuickWindow::setTextRenderType(QQuickWindow::CurveTextRendering);
+    // 原生光栅化 + 禁用子像素 AA: HDR 下 UI 经 PQ shader 处理, ClearType 的
+    // R/G/B 子像素边缘会被 PQ 非线性放大成红边, 故强制灰度抗锯齿。
+    // 保留原生 hinting 是为了小字号 CJK 的锐度 — 曲线渲染无 hinting,
+    // 12px 中文一团糊 (试过, 已回退); SDF 同理略糊。
+    QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(MFPLAYER_APP_NAME);
     app.setWindowIcon(QIcon(":/mfplayer/resources/appicon.ico"));
+
+    QFont uiFont = app.font();
+    uiFont.setStyleStrategy(QFont::NoSubpixelAntialias);
+    app.setFont(uiFont);
 
     qmlRegisterType<MpvRenderItem>("mfplayer", 1, 0, "MpvRenderItem");
 
