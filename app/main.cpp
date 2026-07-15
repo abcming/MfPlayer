@@ -76,19 +76,14 @@ int main(int argc, char *argv[]) {
     }
     QQuickStyle::setStyle("Fusion");
 
-    // 原生光栅化 + 禁用子像素 AA: HDR 下 UI 经 PQ shader 处理, ClearType 的
-    // R/G/B 子像素边缘会被 PQ 非线性放大成红边, 故强制灰度抗锯齿。
-    // 保留原生 hinting 是为了小字号 CJK 的锐度 — 曲线渲染无 hinting,
-    // 12px 中文一团糊 (试过, 已回退); SDF 同理略糊。
-    QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
-
+    // 文字渲染保持 Qt 默认。2026-07 试过 CurveTextRendering (无 hinting,
+    // 12px CJK 发糊) 和 NativeTextRendering+NoSubpixelAntialias (灰度 AA
+    // 观感发虚), 都不如默认清楚 — 封铭实测拍板: 要锐度, 残余的一点点
+    // 子像素红边可以接受 (大面积偏红的真凶是 shader 的 premultiply 数学,
+    // 已在 hdr_pq.frag 修复)。别再动这里。
     QGuiApplication app(argc, argv);
     app.setApplicationName(MFPLAYER_APP_NAME);
     app.setWindowIcon(QIcon(":/mfplayer/resources/appicon.ico"));
-
-    QFont uiFont = app.font();
-    uiFont.setStyleStrategy(QFont::NoSubpixelAntialias);
-    app.setFont(uiFont);
 
     qmlRegisterType<MpvRenderItem>("mfplayer", 1, 0, "MpvRenderItem");
 
