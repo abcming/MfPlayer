@@ -37,7 +37,7 @@ Item {
     WheelHandler {
         onWheel: (event) => {
             event.accepted = true
-            let vol = Playback.volume - event.angleDelta.y / 120 * 5
+            let vol = Playback.volume + event.angleDelta.y / 120 * 5
             vol = Math.max(0, Math.min(100, vol))
             Playback.setVolume(vol)
             cursorVisible = true
