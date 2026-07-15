@@ -55,6 +55,7 @@ public slots:
     void seek(double pos);
     void setVolume(int vol);
     Q_INVOKABLE void setHdrPeakBrightness(int nits);
+    Q_INVOKABLE QString subtitleTrackTitle(int sid) const;
     Q_INVOKABLE void setSid(int sid) { m_mpv->setSid(sid); }
     Q_INVOKABLE void setAid(int aid) { m_mpv->setAid(aid); }
     Q_INVOKABLE void setChapter(int ch) { m_mpv->setChapter(ch); }

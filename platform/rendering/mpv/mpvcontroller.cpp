@@ -414,7 +414,7 @@ void MpvController::setVolume(int vol) {
 void MpvController::setSid(int sid) {
   if (!m_mpv)
     return;
-  std::string s = (sid == -2) ? "no" : std::to_string(sid);
+  std::string s = (sid == -2) ? "no" : (sid == -1) ? "auto" : std::to_string(sid);
   const char *v = s.c_str();
   mpv_set_property_async(m_mpv, 0, "sid", MPV_FORMAT_STRING, &v);
 }

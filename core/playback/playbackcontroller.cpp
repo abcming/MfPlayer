@@ -58,14 +58,13 @@ void PlaybackController::connectMpvSignals() {
         const QJsonObject &item = m_currentItemDetail;
         QJsonArray streams = streamsForSelectedSource();
 
-        // Only add the external subtitle the user selected (Tsukimi-style).
-        // mpv's sub-add select flag is deprecated — bulk-adding would cause
-        // the last-added track to always win regardless of user choice.
+        // Add ALL external subtitles up front so the player menu is complete
+        // and switching is instant. At most one carries the select flag —
+        // bulk-adding with select on each would let the last-added track win.
         for (const QJsonValue &s : streams) {
             QJsonObject stream = s.toObject();
             if (stream["Type"].toString() != Constants::kStreamTypeSubtitle) continue;
             if (!stream["IsExternal"].toBool()) continue;
-            if (stream["Index"].toInt() != m_pendingSubIdx) continue;
 
             QString deliveryUrl = stream["DeliveryUrl"].toString();
             QString fullUrl;
@@ -74,7 +73,7 @@ void PlaybackController::connectMpvSignals() {
                     ? m_emby->serverUrl() + deliveryUrl
                     : deliveryUrl;
             } else if (m_currentMediaSourceId.isEmpty()) {
-                break;  // no media source, can't construct subtitle URL
+                continue;  // no media source, can't construct subtitle URL
             } else {
                 QString itemId = item["Id"].toString();
                 QString idx = QString::number(stream["Index"].toInt());
@@ -86,15 +85,11 @@ void PlaybackController::connectMpvSignals() {
             if (!fullUrl.contains("api_key"))
                 fullUrl += QString(fullUrl.contains('?') ? "&" : "?") +
                            "api_key=" + m_emby->accessToken();
-            qDebug() << "PlaybackController: adding external subtitle:" << stream["DisplayTitle"].toString();
+            const bool select = stream["Index"].toInt() == m_pendingSubIdx;
             m_mpv->addSubtitleFile(fullUrl,
                 stream["DisplayTitle"].toString(),
-                stream["Language"].toString());
-            break;
+                stream["Language"].toString(), select);
         }
-
-        if (m_pendingSubIdx == -2)
-            m_mpv->setSid(-2);  // now maps to "no" in MpvController
 
         // Fuzzy subtitle matching: when mpv's exact slang code match fails
         // (e.g. file has "chi" but user prefers "chs"), fall back to
@@ -176,20 +171,31 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
             }
         }
 
-        // Subtitle: look up language from Emby Index → set slang
+        // Subtitle: precise pre-selection by mpv track id. Internal sub tracks
+        // keep container order, so the Nth internal subtitle stream in
+        // MediaStreams is mpv sid N+1 — slang can't distinguish e.g.
+        // "English Forced" from "English SDH" (both "eng"). External picks are
+        // selected via the sub-add select flag in the fileLoaded handler; sid
+        // stays "no" until then so mpv doesn't flash an auto-picked track.
         if (subtitleIndex >= 0) {
+            int internalPos = 0;
+            bool matched = false, external = false;
             for (const QJsonValue &v : streams) {
                 QJsonObject st = v.toObject();
-                if (st["Type"].toString() == Constants::kStreamTypeSubtitle
-                    && st["Index"].toInt() == subtitleIndex) {
-                    QString lang = st["Language"].toString();
-                    if (!lang.isEmpty()) m_mpv->setSlang(lang);
+                if (st["Type"].toString() != Constants::kStreamTypeSubtitle) continue;
+                if (st["Index"].toInt() == subtitleIndex) {
+                    matched = true;
+                    external = st["IsExternal"].toBool();
                     break;
                 }
+                if (!st["IsExternal"].toBool()) ++internalPos;
             }
-        } else if (subtitleIndex == -2) {
-            // "Off": clear slang so mpv won't auto-select; fileLoaded also calls setSid(-2→"no")
-            m_mpv->setSlang(QString());
+            if (matched)
+                m_mpv->setSid(external ? -2 : internalPos + 1);
+            else
+                m_mpv->setSid(-1);  // stale index — fall back to auto
+        } else {
+            m_mpv->setSid(subtitleIndex == -2 ? -2 : -1);  // "no" / "auto"
         }
 
         m_mpv->play(fullUrl, m_emby->serverUrl(), startTimeTicks / static_cast<double>(Constants::kTicksPerSecond));
@@ -201,6 +207,9 @@ void PlaybackController::playLocalFile(const QString &filePath) {
     // Clear stale Emby playback state
     m_currentItemDetail = {};
     m_pendingSubIdx = -1;  // auto: let fuzzy matching decide
+
+    // Reset sid to auto — a previous Emby play may have left a numeric sid
+    m_mpv->setSid(-1);
 
     // Apply user language preferences so mpv auto-selects matching tracks
     QString al = m_settings->audioLanguage();
@@ -289,6 +298,26 @@ void PlaybackController::onProgressTimer() {
     qint64 ticks = static_cast<qint64>(m_mpv->position() * Constants::kTicksPerSecond);
     m_emby->reportPlaybackProgress(m_currentPlayItemId, ticks,
                                     m_currentPlaySessionId, m_currentMediaSourceId);
+}
+
+QString PlaybackController::subtitleTrackTitle(int sid) const {
+    // Maps an mpv sub track id to the Emby DisplayTitle so the player menu
+    // shows the same names as the detail page. mpv numbers internal sub
+    // tracks in container order (1..N), externals follow in add order —
+    // which matches MediaStreams order in both passes.
+    if (sid < 1) return {};
+    const QJsonArray streams = streamsForSelectedSource();
+    int pos = 0;
+    for (int pass = 0; pass < 2; ++pass) {
+        for (const QJsonValue &v : streams) {
+            QJsonObject st = v.toObject();
+            if (st["Type"].toString() != Constants::kStreamTypeSubtitle) continue;
+            if (st["IsExternal"].toBool() != (pass == 1)) continue;
+            if (++pos == sid)
+                return st["DisplayTitle"].toString();
+        }
+    }
+    return {};
 }
 
 QJsonArray PlaybackController::streamsForSelectedSource() const {

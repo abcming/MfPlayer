@@ -137,8 +137,12 @@ Item {
     function subDisplayName(track) {
         // "Off" pseudo-track
         if (track.id === -2) return track.title
-        // External subs: title is Emby DisplayTitle from sub-add
-        // Built-in subs: mpv's own title or lang — same approach as Tsukimi
+        // Subs: Emby DisplayTitle first — same naming as DetailPage.
+        // Local files (no Emby data) fall back to mpv's title/lang.
+        if (track.type === "sub") {
+            var embyTitle = Playback.subtitleTrackTitle(track.id)
+            if (embyTitle) return embyTitle
+        }
         return track.title || track.lang || ("Track " + track.id)
     }
 
