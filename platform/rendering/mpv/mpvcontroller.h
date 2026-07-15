@@ -48,6 +48,7 @@ public:
     Q_INVOKABLE void setChapter(int ch);
     Q_INVOKABLE void setSpeed(double speed);
     Q_INVOKABLE void setTargetPeak(int nits);
+    Q_INVOKABLE void setSubPos(int pos);
     Q_INVOKABLE void toggleStats();
     /// Called after HDR swapchain detection. Sets target-trc/target-prim
     /// to pq+bt.2020 (HDR) or srgb+bt.709 (SDR). Peak is left untouched.

@@ -65,7 +65,12 @@ MpvController::MpvController(QObject *parent) : QObject(parent) {
   mpv_set_option_string(m_mpv, "interpolation", "yes");
   mpv_set_option_string(m_mpv, "tscale", "oversample");
   mpv_set_option_string(m_mpv, "deband", "yes");
-  mpv_set_option_string(m_mpv, "blend-subtitles", "video");
+  // 字幕不烘进视频帧 (blend-subtitles=no 默认): 在输出分辨率直接合成,
+  // 避免随视频缩放发糊, sub-pos 也能独立于视频帧移动。
+  // HDR 亮度正确性由 gpu-next 的 overlay 色彩管理保证, 不再需要 blend。
+  mpv_set_option_string(m_mpv, "embeddedfonts", "yes");
+  // 让 sub-pos/sub-margin-y 对 ASS 对白生效 (\pos 定位的特效字幕不受影响)
+  mpv_set_option_string(m_mpv, "sub-ass-force-margins", "yes");
   mpv_set_option_string(m_mpv, "sub-auto", "fuzzy");
   mpv_set_option_string(m_mpv, "keep-open", "yes");
   mpv_set_option_string(m_mpv, "demuxer-max-bytes", "500MiB");
@@ -336,6 +341,13 @@ void MpvController::setTargetPeak(int nits) {
   QByteArray val = QByteArray::number(nits);
   const char *data = val.constData();
   mpv_set_property_async(m_mpv, 0, "target-peak", MPV_FORMAT_STRING, &data);
+}
+
+void MpvController::setSubPos(int pos) {
+  if (!m_mpv)
+    return;
+  int64_t v = pos;
+  mpv_set_property_async(m_mpv, 0, "sub-pos", MPV_FORMAT_INT64, &v);
 }
 
 void MpvController::updateHdrDisplayActive(bool active) {

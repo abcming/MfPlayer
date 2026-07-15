@@ -120,6 +120,8 @@ QML UI (sRGB) → RGBA16F FBO → hdr_pq.vert + hdr_pq.frag (sRGB→Rec.709→Re
 - 启动时 Main.qml 有黑色遮罩层 (`hdrStartupCover`) 防过曝，检测完成后淡出
 - SDR 系统自动回退: `_hdrActive=false` → `layer.enabled=false` → 零 shader 开销
 - hdr_pq.frag 刻意不 unpremultiply alpha (避免 ClearType 子像素偏色)
+- 字幕不走 blend-subtitles (2026-07 拆除): 输出分辨率直接合成才清晰, sub-pos 才能独立移动;
+  HDR 下字幕亮度由 gpu-next overlay 色彩管理保证, 别改回 blend-subtitles=video
 - hdr_pq.vert 负责处理全屏三角形顶点变换，与 frag 配对使用
 - `compile_hdr_shaders.bat` 用于 Windows 下着色器预编译
 

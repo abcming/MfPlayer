@@ -725,6 +725,20 @@ Item {
             id: controls
             opacity: ((bottomHoverHandler.hovered && cursorVisible) || !Playback.playing || volumeOnly) ? 1 : 0
             visible: opacity > 0
+
+            // Lift subtitles above the control bar while it's shown (volume
+            // strip alone is too small to collide). sub-pos is % of window
+            // height from the top, 100 = original bottom position.
+            property bool blockingSubs: visible && !volumeOnly
+            onBlockingSubsChanged: {
+                if (blockingSubs) {
+                    var pct = Math.round((height + 32) / Math.max(1, playerRoot.height) * 100)
+                    Playback.setSubPos(Math.max(80, 100 - pct))
+                } else {
+                    Playback.setSubPos(100)
+                }
+            }
+            Component.onDestruction: Playback.setSubPos(100)
             property bool _noFade: false
             Behavior on opacity { NumberAnimation { duration: controls._noFade ? 0 : 200 } }
             onVolumeOnlyChanged: { if (!volumeOnly) _volumeFadeTimer.stop() }
