@@ -55,7 +55,6 @@ void PlaybackController::connectMpvSignals() {
 
     // Load external subtitles after file is ready
     connect(m_mpv, &MpvController::fileLoaded, this, [this]() {
-        const QJsonObject &item = m_currentItemDetail;
         QJsonArray streams = streamsForSelectedSource();
 
         // Add ALL external subtitles up front so the player menu is complete
@@ -75,11 +74,12 @@ void PlaybackController::connectMpvSignals() {
             } else if (m_currentMediaSourceId.isEmpty()) {
                 continue;  // no media source, can't construct subtitle URL
             } else {
-                QString itemId = item["Id"].toString();
+                // m_currentPlayItemId 而非 item["Id"]: 详情未预缓存时
+                // m_currentItemDetail 只有回填的 MediaSources, 没有 Id 字段
                 QString idx = QString::number(stream["Index"].toInt());
                 QString codec = stream["Codec"].toString().toLower();
                 fullUrl = m_emby->serverUrl() +
-                    "/Videos/" + itemId + "/" + m_currentMediaSourceId +
+                    "/Videos/" + m_currentPlayItemId + "/" + m_currentMediaSourceId +
                     "/Subtitles/" + idx + "/0/Stream." + codec;
             }
             if (!fullUrl.contains("api_key"))
@@ -154,6 +154,11 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
         // pre-cached (e.g. episodes played from a series page).
         if (!mediaSources.isEmpty()) {
             m_currentItemDetail["MediaSources"] = mediaSources;
+            // 详情未预缓存时 (播放页直接切集) playItem 里解析不到 srcId —
+            // 用 PlaybackInfo 的第一个 source 补上。否则 streamsForSelectedSource()
+            // 永远匹配不到, 外挂字幕全被跳过, 字幕菜单也退化成 mpv 原始轨道名
+            if (m_currentMediaSourceId.isEmpty())
+                m_currentMediaSourceId = mediaSources.first().toObject()["Id"].toString();
             emit currentItemDetailChanged();
         }
         m_currentPlaySessionId = playSessionId;
