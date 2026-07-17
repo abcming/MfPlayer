@@ -645,9 +645,8 @@ void EmbyClient::fetchItemsFiltered(const FetchParams &p) {
 
     getJson("/emby/Users/" + m_userId + "/Items", query, [this, p](const QJsonDocument &doc) {
         QJsonObject obj = doc.object();
-        QString cacheKey = p.parentId + ":F:" + p.includeTypes + ":" + p.filters + ":" + p.sortBy + ":" + p.genreIds + ":" + p.studioIds + ":" + p.personIds;
         int total = obj.contains("TotalRecordCount") ? obj["TotalRecordCount"].toInt() : -1;
-        emit itemsFetched(obj["Items"].toArray(), p.parentId, cacheKey, total);
+        emit itemsFetched(obj["Items"].toArray(), p.parentId, p.cacheKey(), total);
     });
 }
 

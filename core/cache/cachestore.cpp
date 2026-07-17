@@ -85,6 +85,11 @@ void CacheStore::init() {
             q.exec("ALTER TABLE items ADD COLUMN sort_name TEXT");
         q.exec("CREATE TABLE IF NOT EXISTS item_detail ("
                "item_id TEXT PRIMARY KEY, data TEXT, fetched_at INTEGER)");
+        // 整段 JSON 存储 (同 episodes 表): 字段全保真, 预显示数据与网络响应
+        // 逐字节一致 → MediaModel 指纹去重可以正确跳过重复 reset。
+        // 旧 items 表 (逐行列存, 缩减字段) 不再写入, 存量数据由 expireCache 自然清掉。
+        q.exec("CREATE TABLE IF NOT EXISTS items_json ("
+               "cache_key TEXT PRIMARY KEY, data TEXT, fetched_at INTEGER)");
         q.exec("CREATE TABLE IF NOT EXISTS seasons ("
                "series_id TEXT, season_id TEXT, name TEXT, year INT, "
                "image_url TEXT, image_path TEXT, index_number INT, "
@@ -100,6 +105,7 @@ void CacheStore::init() {
                "token TEXT DEFAULT '', user_id TEXT DEFAULT '', "
                "is_active INTEGER DEFAULT 0, last_used TEXT)");
         q.exec("CREATE INDEX IF NOT EXISTS idx_items_fetched ON items(fetched_at)");
+        q.exec("CREATE INDEX IF NOT EXISTS idx_items_json_fetched ON items_json(fetched_at)");
         q.exec("CREATE INDEX IF NOT EXISTS idx_detail_fetched ON item_detail(fetched_at)");
         q.exec("CREATE INDEX IF NOT EXISTS idx_seasons_fetched ON seasons(fetched_at)");
         q.exec("CREATE INDEX IF NOT EXISTS idx_images_fetched ON images(fetched_at)");
@@ -141,6 +147,23 @@ bool CacheStore::isFresh(qint64 timestamp) const {
     return (now - timestamp) < Constants::kCacheExpirySeconds;
 }
 
+void CacheStore::cacheItemsInMemory(const QString &parentId, const QJsonArray &items) {
+    // LRU eviction: keep at most kMaxItemCacheEntries parent folders in memory
+    if (!m_itemsCache.contains(parentId)) {
+        while (m_itemsCacheLru.size() >= kMaxItemCacheEntries) {
+            QString oldest = m_itemsCacheLru.takeFirst();
+            m_itemsCache.remove(oldest);
+            m_itemsCacheTime.remove(oldest);
+        }
+        m_itemsCacheLru.append(parentId);
+    } else {
+        m_itemsCacheLru.move(m_itemsCacheLru.indexOf(parentId),
+                             m_itemsCacheLru.size() - 1);
+    }
+    m_itemsCache[parentId] = items;
+    m_itemsCacheTime[parentId] = QDateTime::currentSecsSinceEpoch();
+}
+
 QJsonArray CacheStore::getItems(const QString &parentId) {
     auto it = m_itemsCache.find(parentId);
     bool hasStaleMemory = false;
@@ -155,66 +178,34 @@ QJsonArray CacheStore::getItems(const QString &parentId) {
         m_itemsCache.erase(it);
         if (ti != m_itemsCacheTime.end())
             m_itemsCacheTime.erase(ti);
+        m_itemsCacheLru.removeOne(parentId);  // keep LRU in sync with the cache
     }
 
     QSqlQuery q(m_db);
-    q.prepare("SELECT item_id, type, name, year, overview, image_url, image_path, "
-              "parent_series_id, index_number, child_count, fetched_at, sort_name "
-              "FROM items WHERE parent_id = ? ORDER BY sort_order ASC");
+    q.prepare("SELECT data, fetched_at FROM items_json WHERE cache_key = ?");
     q.addBindValue(parentId);
     q.exec();
 
     QJsonArray items;
-    while (q.next()) {
-        if (!isFresh(q.value(10).toLongLong()))
-            continue;
-        QJsonObject obj;
-        obj["Id"] = q.value(0).toString();
-        obj["Type"] = q.value(1).toString();
-        obj["Name"] = q.value(2).toString();
-        obj["ProductionYear"] = q.value(3).toInt();
-        obj["Overview"] = q.value(4).toString();
-        {
-            QString tag = q.value(5).toString();
-            if (!tag.isEmpty())
-                obj["ImageTags"] = QJsonObject{{"Primary", tag}};
-        }
-        obj["SortName"] = q.value(11).toString();
-        obj["ParentId"] = q.value(7).toString();
-        obj["IndexNumber"] = q.value(8).toInt();
-        obj["ChildCount"] = q.value(9).toInt();
-        items.append(obj);
-    }
+    if (q.next() && isFresh(q.value(1).toLongLong()))
+        items = QJsonDocument::fromJson(q.value(0).toString().toUtf8()).array();
     if (items.isEmpty() && hasStaleMemory) {
         // Fallback to stale memory data to prevent silent DB blanking
         return staleData;
     }
-    m_itemsCache[parentId] = items;
-    m_itemsCacheTime[parentId] = QDateTime::currentSecsSinceEpoch();
+    if (!items.isEmpty())
+        cacheItemsInMemory(parentId, items);
     return items;
 }
 
 void CacheStore::putItems(const QString &parentId, const QJsonArray &items) {
-    qint64 now = QDateTime::currentSecsSinceEpoch();
-    // LRU eviction: keep at most kMaxItemCacheEntries parent folders in memory
-    if (!m_itemsCache.contains(parentId)) {
-        while (m_itemsCacheLru.size() >= kMaxItemCacheEntries) {
-            QString oldest = m_itemsCacheLru.takeFirst();
-            m_itemsCache.remove(oldest);
-            m_itemsCacheTime.remove(oldest);
-        }
-        m_itemsCacheLru.append(parentId);
-    } else {
-        m_itemsCacheLru.move(m_itemsCacheLru.indexOf(parentId),
-                             m_itemsCacheLru.size() - 1);
-    }
-    m_itemsCache[parentId] = items;
-    m_itemsCacheTime[parentId] = now;
+    cacheItemsInMemory(parentId, items);
     // Offload SQL write to DBWorker thread — avoids blocking main thread
+    auto data = QString::fromUtf8(QJsonDocument(items).toJson(QJsonDocument::Compact));
     uint32_t gen = m_writeGeneration;
     QMetaObject::invokeMethod(m_dbWorker, "putItems", Qt::QueuedConnection,
                               Q_ARG(QString, parentId),
-                              Q_ARG(QJsonArray, items),
+                              Q_ARG(QString, data),
                               Q_ARG(uint32_t, gen),
                               Q_ARG(QPointer<QObject>, QPointer<QObject>(this)));
 }

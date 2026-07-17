@@ -54,6 +54,10 @@ signals:
 private:
     void connectDBWorker();
     bool isFresh(qint64 timestamp) const;
+    // Insert into m_itemsCache with LRU bookkeeping — the ONLY way entries may
+    // enter m_itemsCache (an entry present in the cache but absent from the LRU
+    // list makes putItems() call QList::move(-1, ...) — UB in release builds).
+    void cacheItemsInMemory(const QString &parentId, const QJsonArray &items);
     // url: actual request URL (may carry format=jpg on retry);
     // origUrl: original URL used for all bookkeeping (hash, imageReady, cache key)
     void doFetchImage(const QString &url, int retries, const QString &origUrl);

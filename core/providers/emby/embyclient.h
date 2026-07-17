@@ -27,6 +27,14 @@ struct FetchParams {
     int limit = 0;
     int startIndex = 0;
     bool recursive = true;
+
+    // Cache key for the items table — must stay in sync between the writer
+    // (EmbyClient::fetchItemsFiltered → itemsFetched → putItems) and readers
+    // (LibraryBrowser cache pre-display via CacheStore::getItems).
+    QString cacheKey() const {
+        return parentId + ":F:" + includeTypes + ":" + filters + ":" + sortBy
+             + ":" + sortOrder + ":" + genreIds + ":" + studioIds + ":" + personIds;
+    }
 };
 
 class EmbyClient : public QObject {
