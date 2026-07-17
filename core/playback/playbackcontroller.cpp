@@ -204,6 +204,7 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
 }
 
 void PlaybackController::playLocalFile(const QString &filePath) {
+    ++m_playGeneration;  // cancel in-flight playItem callbacks (fetchPlaybackInfo)
     // Clear stale Emby playback state
     m_currentItemDetail = {};
     m_pendingSubIdx = -1;  // auto: let fuzzy matching decide
@@ -260,7 +261,8 @@ void PlaybackController::updateCachedProgress(const QString &itemId, qint64 fina
     if (cached.isEmpty()) return;
     double totalTicks = cached["RunTimeTicks"].toDouble();
     double playedPct = totalTicks > 0 ? (static_cast<double>(finalTicks) / totalTicks * 100.0) : 0;
-    QJsonObject ud;
+    // Merge into existing UserData — wholesale replacement would drop IsFavorite etc.
+    QJsonObject ud = cached["UserData"].toObject();
     ud["PlaybackPositionTicks"] = static_cast<double>(finalTicks);
     ud["PlayedPercentage"] = playedPct;
     ud["Played"] = playedPct > 90;

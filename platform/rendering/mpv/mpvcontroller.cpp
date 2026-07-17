@@ -116,8 +116,10 @@ MpvController::MpvController(QObject *parent) : QObject(parent) {
   mpv_observe_property(m_mpv, 0, "chapter", MPV_FORMAT_INT64);
   mpv_observe_property(m_mpv, 0, "speed", MPV_FORMAT_DOUBLE);
 
-  m_mpvVersion =
-      QString::fromUtf8(mpv_get_property_string(m_mpv, "mpv-version"));
+  if (char *ver = mpv_get_property_string(m_mpv, "mpv-version")) {
+    m_mpvVersion = QString::fromUtf8(ver);
+    mpv_free(ver);
+  }
   mpv_set_wakeup_callback(m_mpv, wakeup, this);
 }
 

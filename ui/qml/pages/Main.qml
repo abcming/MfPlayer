@@ -518,4 +518,14 @@ ApplicationWindow {
             }
         }
     }
+
+    // 播放错误（起播失败/解码错误）：PlayerPage 收到后会退回上一页，
+    // 这里负责把原因展示给用户，否则是静默失败
+    Connections {
+        target: Playback
+        function onPlayError(msg) {
+            globalErrorText.text = msg || Str.playFailed
+            globalErrorDialog.open()
+        }
+    }
 }

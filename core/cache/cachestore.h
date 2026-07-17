@@ -54,7 +54,9 @@ signals:
 private:
     void connectDBWorker();
     bool isFresh(qint64 timestamp) const;
-    void doFetchImage(const QString &url, int retries);
+    // url: actual request URL (may carry format=jpg on retry);
+    // origUrl: original URL used for all bookkeeping (hash, imageReady, cache key)
+    void doFetchImage(const QString &url, int retries, const QString &origUrl);
     void processDownloadQueue();
 
     QSqlDatabase m_db;  // main-thread read connection
