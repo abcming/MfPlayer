@@ -186,7 +186,12 @@ ioPool().start([guard, ...]() {
 - 滑块防抖: hdrPeakBrightness/sdrWhiteNits/seekStep/windowSize 使用 200ms QTimer 防抖, 避免每次拖动像素写 QSettings
 - MediaModel::fromJson 的 BackdropImageTags 只解析一次，复用结果（减少 O(N) 次 QJsonObject key lookup）
 - langCodeToName 用 static QHash 代替 30+ if/else 链（O(1) 替代 O(N)）
-- m_itemsCache 有 LRU 上限 (200 parent folders)，避免数万文件夹浏览后内存膨胀到 192MB+
+- m_itemsCache 有 LRU 上限 (200 parent folders)，避免数万文件夹浏览后内存膨胀到 192MB+。
+  入口统一 cacheItemsInMemory() — 绕过它直接写 m_itemsCache 会让 LRU 表失配, putItems 走 QList::move(-1) UB
+- items 缓存 = items_json 表整段 JSON (键 FetchParams::cacheKey(), 写读必须共用该方法拼键)。
+  切库/进库 (browseLibrary / setLibraryTab TabDefault) 先 getItems 预显示, 网络到达后 setItems 覆盖 —
+  数据未变时 MediaModel 指纹跳过 reset (零闪烁)。别改回逐行列存: 缩减字段与网络数据指纹相同但内容不同,
+  会被指纹挡住导致进度/收藏标缺失 (2026-07 复活该路径时的教训)
 - ImageCacheProvider LRU 500→200，省 ~234MB
 - CastAndCrewRow filteredModel 收集满 20 人提前 break
 - sortByIndexNumber 预提取 key 代替 comparator 中 toObject()
