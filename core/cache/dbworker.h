@@ -32,7 +32,7 @@ public slots:
     void init();
 
     // ── Content cache writes ──
-    void putItems(const QString &parentId, const QJsonArray &items,
+    void putItems(const QString &cacheKey, const QString &data,
                   uint32_t generation, QPointer<QObject> guard);
     void putItemDetail(const QString &itemId, const QString &data,
                        uint32_t generation, QPointer<QObject> guard);

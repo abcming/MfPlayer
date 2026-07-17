@@ -170,14 +170,20 @@ void LibraryBrowser::browseLibrary(const QString &libraryId) {
     emit filterPlayedChanged();
 
     QString includeTypes = m_libraryTypes.value(libraryId) == "movies" ? Constants::kTypeMovie : Constants::kTypeSeries;
-    m_emby->fetchItemsFiltered({
+    FetchParams p{
         .parentId = libraryId,
         .includeTypes = includeTypes,
         .filters = buildFiltersString(),
         .sortBy = currentSortByString(),
         .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending"),
         .limit = m_paginationLimit
-    });
+    };
+    // 缓存预显示: 首屏立即用上次的数据渲染, 网络数据到达后由 setItems 覆盖
+    // (数据未变时 MediaModel 指纹去重会跳过 reset, 零闪烁)
+    QJsonArray cached = m_cache->getItems(p.cacheKey());
+    if (!cached.isEmpty())
+        m_contentModel->setItems(cached);
+    m_emby->fetchItemsFiltered(p);
 }
 
 void LibraryBrowser::setLibraryTab(int tab) {
@@ -194,17 +200,23 @@ void LibraryBrowser::setLibraryTab(int tab) {
     emit browseContextChanged();
 
     switch (tab) {
-    case TabDefault:
+    case TabDefault: {
         m_paginationLimit = kPageSize;
-        m_emby->fetchItemsFiltered({
+        FetchParams p{
             .parentId = m_currentLibraryId,
             .includeTypes = m_libraryTypes.value(m_currentLibraryId) == "movies" ? Constants::kTypeMovie : Constants::kTypeSeries,
             .filters = buildFiltersString(),
             .sortBy = currentSortByString(),
             .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending"),
             .limit = m_paginationLimit
-        });
+        };
+        // 缓存预显示 — 同 browseLibrary
+        QJsonArray cached = m_cache->getItems(p.cacheKey());
+        if (!cached.isEmpty())
+            m_contentModel->setItems(cached);
+        m_emby->fetchItemsFiltered(p);
         break;
+    }
     case TabSuggestions:
         m_emby->fetchSuggestionsResume(m_currentLibraryId);
         m_emby->fetchSuggestionsLatest(m_currentLibraryId,

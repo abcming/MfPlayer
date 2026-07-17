@@ -80,37 +80,18 @@ bool DBWorker::isFresh(qint64 timestamp) const {
 
 // ── Content cache writes ────────────────────────────────────────────
 
-void DBWorker::putItems(const QString &parentId, const QJsonArray &items,
+void DBWorker::putItems(const QString &cacheKey, const QString &data,
                          uint32_t generation, QPointer<QObject> guard) {
     if (m_stopFlag) return;
-    qint64 now = QDateTime::currentSecsSinceEpoch();
-    m_db.transaction();
     QSqlQuery q(m_db);
-    q.prepare("INSERT OR REPLACE INTO items "
-              "(parent_id, item_id, type, name, year, overview, image_url, image_path, "
-              "parent_series_id, index_number, child_count, sort_order, fetched_at, sort_name) "
-              "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-    for (int i = 0; i < items.size(); ++i) {
-        auto obj = items[i].toObject();
-        q.addBindValue(parentId);
-        q.addBindValue(obj["Id"].toString());
-        q.addBindValue(obj["Type"].toString());
-        q.addBindValue(obj["Name"].toString());
-        q.addBindValue(obj["ProductionYear"].toInt());
-        q.addBindValue(obj["Overview"].toString());
-        q.addBindValue(obj["ImageTags"].toObject()["Primary"].toString());
-        q.addBindValue(QString());
-        q.addBindValue(obj["ParentId"].toString());
-        q.addBindValue(obj["IndexNumber"].toInt());
-        q.addBindValue(obj["ChildCount"].toInt());
-        q.addBindValue(i);
-        q.addBindValue(now);
-        q.addBindValue(obj["SortName"].toString());
-        q.exec();
-    }
-    m_db.commit();
-
-    emit itemsWritten(parentId);
+    q.prepare("INSERT OR REPLACE INTO items_json (cache_key, data, fetched_at) VALUES (?,?,?)");
+    q.addBindValue(cacheKey);
+    q.addBindValue(data);
+    q.addBindValue(QDateTime::currentSecsSinceEpoch());
+    q.exec();
+    Q_UNUSED(guard);
+    Q_UNUSED(generation);
+    emit itemsWritten(cacheKey);
 }
 
 void DBWorker::putItemDetail(const QString &itemId, const QString &data,
@@ -288,6 +269,8 @@ void DBWorker::expireCache(QPointer<QObject> guard) {
         QSqlQuery q(m_db);
         q.prepare("DELETE FROM items WHERE fetched_at < ?");
         q.addBindValue(cutoff); q.exec();
+        q.prepare("DELETE FROM items_json WHERE fetched_at < ?");
+        q.addBindValue(cutoff); q.exec();
         q.prepare("DELETE FROM item_detail WHERE fetched_at < ?");
         q.addBindValue(cutoff); q.exec();
         q.prepare("DELETE FROM seasons WHERE fetched_at < ?");
@@ -308,6 +291,7 @@ void DBWorker::clearContentCache(QPointer<QObject> guard) {
     m_db.transaction();
     QSqlQuery q(m_db);
     q.exec("DELETE FROM items");
+    q.exec("DELETE FROM items_json");
     q.exec("DELETE FROM item_detail");
     q.exec("DELETE FROM seasons");
     q.exec("DELETE FROM episodes");
