@@ -103,20 +103,29 @@ void PlaybackController::initProgressTimer() {
     m_progressTimer->setInterval(10000);
     connect(m_progressTimer, &QTimer::timeout, this, &PlaybackController::onProgressTimer);
     connect(this, &PlaybackController::endOfFile, this, [this]() {
-        if (!m_currentPlayItemId.isEmpty()) {
-            qint64 finalTicks = static_cast<qint64>(m_mpv->position() * Constants::kTicksPerSecond);
-            m_emby->reportPlaybackStop(m_currentPlayItemId, finalTicks,
-                m_currentPlaySessionId, m_currentMediaSourceId);
-            updateCachedProgress(m_currentPlayItemId, finalTicks);
-            m_currentPlayItemId.clear();
-        }
+        reportStopForCurrent();
         m_progressTimer->stop();
     });
+}
+
+// 上报当前 Emby 条目的最终进度并结束其 PlaySession。所有会替换/结束当前
+// 播放的入口 (stop / playItem 换片 / playLocalFile / endOfFile) 都必须先走
+// 这里, 否则上一集的观看进度不落 Emby。
+void PlaybackController::reportStopForCurrent() {
+    if (m_currentPlayItemId.isEmpty()) return;
+    qint64 finalTicks = static_cast<qint64>(m_mpv->position() * Constants::kTicksPerSecond);
+    m_emby->reportPlaybackStop(m_currentPlayItemId, finalTicks,
+        m_currentPlaySessionId, m_currentMediaSourceId);
+    updateCachedProgress(m_currentPlayItemId, finalTicks);
+    m_currentPlayItemId.clear();
 }
 
 void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
                                   const QString &mediaSourceId,
                                   int audioIndex, int subtitleIndex) {
+    // 手动切集/切版本时结束上一个 PlaySession, 观看进度才会落 Emby
+    // (自动连播路径无影响: endOfFile 处理器已上报并清空了 itemId)
+    reportStopForCurrent();
     m_currentPlayItemId = itemId;
     m_currentItemDetail = m_cache->getItemDetail(itemId);
     int gen = ++m_playGeneration;
@@ -205,6 +214,7 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
 
 void PlaybackController::playLocalFile(const QString &filePath) {
     ++m_playGeneration;  // cancel in-flight playItem callbacks (fetchPlaybackInfo)
+    reportStopForCurrent();  // 若正在播 Emby 条目, 先结束其 PlaySession
     // Clear stale Emby playback state
     m_currentItemDetail = {};
     m_pendingSubIdx = -1;  // auto: let fuzzy matching decide
@@ -233,13 +243,7 @@ void PlaybackController::resume() { m_mpv->resume(); }
 void PlaybackController::stop() {
     ++m_playGeneration;  // cancel any pending playItem callbacks
     m_currentItemDetail = {};
-    if (!m_currentPlayItemId.isEmpty()) {
-        qint64 finalTicks = static_cast<qint64>(m_mpv->position() * Constants::kTicksPerSecond);
-        m_emby->reportPlaybackStop(m_currentPlayItemId, finalTicks,
-            m_currentPlaySessionId, m_currentMediaSourceId);
-        updateCachedProgress(m_currentPlayItemId, finalTicks);
-        m_currentPlayItemId.clear();
-    }
+    reportStopForCurrent();
     m_progressTimer->stop();
     m_mpv->stop();
 }

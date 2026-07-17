@@ -93,6 +93,7 @@ private:
     void initProgressTimer();
     void onProgressTimer();
     void updateCachedProgress(const QString &itemId, qint64 finalTicks);
+    void reportStopForCurrent();
     QJsonArray streamsForSelectedSource() const;
     void fuzzySelectSubtitle();
     static double jaroWinkler(const QString &a, const QString &b);

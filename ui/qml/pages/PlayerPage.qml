@@ -818,8 +818,10 @@ Item {
         function onEndOfFile() {
             var action = Server.settings.actionAfterEnd
             if (action === 1) {
-                // Loop: restart current file
+                // Loop: restart current file. keep-open=yes 在片尾处于暂停态,
+                // seek 不会自动恢复播放, 必须显式 resume
                 Playback.seek(0)
+                Playback.resume()
                 return
             }
             if (action === 2) {
