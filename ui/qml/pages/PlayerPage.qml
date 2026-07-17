@@ -101,11 +101,10 @@ Item {
 
     // ── Overlay visibility ── (hover-driven, no timers)
 
-    property string _playError: ""
     Connections {
         target: Playback
         function onPlayError(msg) {
-            _playError = msg || Str.playFailed
+            // 错误内容由 Main.qml 的全局错误框展示，这里只负责退出播放页
             Playback.stop()
             Nav.pop()
         }

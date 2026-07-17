@@ -294,5 +294,9 @@ bool MediaModel::removeItem(const QString &itemId) {
             --it.value();
     }
     endRemoveRows();
+    // Invalidate the dedup fingerprint: a later setItems() with the original
+    // source array (same size + firstId) must not be skipped.
+    m_lastSourceSize = -1;
+    m_lastSourceFirstId.clear();
     return true;
 }
