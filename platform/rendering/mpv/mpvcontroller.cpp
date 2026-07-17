@@ -115,6 +115,9 @@ MpvController::MpvController(QObject *parent) : QObject(parent) {
   mpv_observe_property(m_mpv, 0, "chapter-list", MPV_FORMAT_NODE);
   mpv_observe_property(m_mpv, 0, "chapter", MPV_FORMAT_INT64);
   mpv_observe_property(m_mpv, 0, "speed", MPV_FORMAT_DOUBLE);
+  // keep-open=yes 下播到结尾不触发 MPV_EVENT_END_FILE (文件不卸载, 只 pause
+  // 停在最后一帧) — 播放结束必须靠 eof-reached 属性检测
+  mpv_observe_property(m_mpv, 0, "eof-reached", MPV_FORMAT_FLAG);
 
   if (char *ver = mpv_get_property_string(m_mpv, "mpv-version")) {
     m_mpvVersion = QString::fromUtf8(ver);
@@ -325,6 +328,7 @@ void MpvController::play(const QString &url, const QString &referrer,
   mpv_set_property_async(m_mpv, 0, "pause", MPV_FORMAT_FLAG, &flag);
   m_hasVideo = true;
   m_playing = true;
+  m_eofReached = false;
   m_position = 0;
   m_duration = 0;
   emit hasVideoChanged();
@@ -399,6 +403,7 @@ void MpvController::stop() {
   mpv_command_async(m_mpv, 0, args);
   m_hasVideo = false;
   m_playing = false;
+  m_eofReached = false;
   m_position = 0;
   m_duration = 0;
   m_pendingStartSeconds = 0;
@@ -530,6 +535,18 @@ void MpvController::onMpvEvents() {
       } else if (!strcmp(name, "speed") && prop->format == MPV_FORMAT_DOUBLE) {
         m_speed = *static_cast<double *>(prop->data);
         emit speedChanged();
+      } else if (!strcmp(name, "eof-reached") &&
+                 prop->format == MPV_FORMAT_FLAG) {
+        bool eof = *static_cast<int *>(prop->data);
+        if (eof && !m_eofReached) {
+          // 边沿触发: seek 回退会把 eof-reached 置回 false, 复位后可再次触发
+          m_eofReached = true;
+          m_playing = false;
+          emit playingChanged();
+          emit endOfFile();
+        } else if (!eof) {
+          m_eofReached = false;
+        }
       } else if (!handleNodeProperty(name, prop)) {
         // unhandled property
       }
@@ -553,11 +570,16 @@ void MpvController::onMpvEvents() {
     case MPV_EVENT_END_FILE: {
       auto *ef = static_cast<mpv_event_end_file *>(event->data);
       if (ef->reason == MPV_END_FILE_REASON_EOF) {
+        // keep-open=yes 下正常不会走到这里 (eof-reached 分支负责);
+        // m_eofReached 防止两条路径重复发 endOfFile
         m_playing = false;
         m_hasVideo = false;
         emit playingChanged();
         emit hasVideoChanged();
-        emit endOfFile();
+        if (!m_eofReached) {
+          m_eofReached = true;
+          emit endOfFile();
+        }
       } else if (ef->error < 0) {
         m_playing = false;
         m_hasVideo = false;

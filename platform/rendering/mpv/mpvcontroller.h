@@ -115,6 +115,7 @@ private:
     double m_position = 0;
     double m_duration = 0;
     bool m_playing = false;
+    bool m_eofReached = false;  // eof-reached 边沿检测, 防 endOfFile 重复触发
     std::atomic<bool> m_hasVideo{false};
     int m_volume = 80;
     QVariantList m_tracks;
