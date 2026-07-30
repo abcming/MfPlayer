@@ -530,9 +530,11 @@ void LibraryBrowser::onItemsFetched(const QJsonArray &items, const QString &pare
 // ── Sort & Filter ──
 
 QString LibraryBrowser::currentSortByString() const {
-    // Episodes tab: group by series, then by episode number
+    // Episodes tab: group by series, then sort within each show by
+    // season + episode number. ParentIndexNumber (season) is required —
+    // IndexNumber alone ties across seasons (S1E1/S2E1/S1E2 interleave).
     if (m_currentTab == TabEpisodes)
-        return QStringLiteral("SeriesSortName,IndexNumber");
+        return QStringLiteral("SeriesSortName,ParentIndexNumber,IndexNumber");
     switch (m_sortBy) {
     case 1: return QStringLiteral("ProductionYear,SortName");
     case 2: return QStringLiteral("CommunityRating,SortName");
