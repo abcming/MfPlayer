@@ -66,7 +66,7 @@ DetailManager (&app)          ← 同上, 裸指针
 - `_appVersion` — "MfPlayer vX.Y.Z"
 - `_qtVersion` — Qt 编译版本号字符串
 - `_startupFile` — "Open with" 传入的文件路径
-- `_hdrActive` (bool) — 启动 300ms 后动态设置，swapchain 预热后才能检测
+- `_hdrActive` (bool) — warmup 全屏切换后的首个 frameSwapped 时动态设置，swapchain 预热后才能检测
 
 qmlRegisterType: 只有 `MpvRenderItem`。
 
@@ -116,7 +116,11 @@ QML UI (sRGB) → RGBA16F FBO → hdr_pq.vert + hdr_pq.frag (sRGB→Rec.709→Re
 ```
 
 - mpv 和 UI 共用同一个 HDR10 swapchain，两条并行管线
-- `_hdrActive` 在启动 300ms 后才被设置 (swapchain warmup 后才能检测)
+- `_hdrActive` 由事件驱动: warmup 的 showNormal() 之后首个 frameSwapped 才检测 (2026-08 修)。
+  **别改回固定定时器** — showFullScreen/showNormal 会重建 swapchain, 定时到点时可能读到
+  未协商完的格式, 误判 SDR。而 Main.qml 的遮罩只看"值定义了没", 一旦误判就是掀开遮罩 +
+  PQ shader 不开 = sRGB UI 直送 HDR10 swapchain 白爆 (启动偶发过曝的根因)。
+  2s 兜底定时器是防"永不出帧 → 遮罩永久黑屏"的死锁, 也别删
 - 启动时 Main.qml 有黑色遮罩层 (`hdrStartupCover`) 防过曝，检测完成后淡出
 - SDR 系统自动回退: `_hdrActive=false` → `layer.enabled=false` → 零 shader 开销
 - hdr_pq.frag 做完整 unpremultiply→变换→re-premultiply (2026-07 定稿): premultiplied 直接过
