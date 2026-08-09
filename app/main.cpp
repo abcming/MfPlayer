@@ -1,4 +1,5 @@
 #include "common/version.h"
+#include <memory>
 #include <QGuiApplication>
 #include <QIcon>
 #include <QLoggingCategory>
@@ -181,26 +182,49 @@ int main(int argc, char *argv[]) {
     // Warmup: pre-allocate fullscreen swapchain to avoid first-toggle GPU stall.
     // Deferred to after app.exec() starts so the UI can render first.
     if (rootWin) {
-        QTimer::singleShot(100, rootWin, [rootWin]() {
+        QTimer::singleShot(100, rootWin, [rootWin, ctx = qmlEngine.rootContext(), playbackCtrl]() {
             rootWin->showFullScreen();
-            QTimer::singleShot(0, rootWin, [rootWin]() {
+            QTimer::singleShot(0, rootWin, [rootWin, ctx, playbackCtrl]() {
                 rootWin->showNormal();
+
+                // Detect actual swapchain HDR status once the warmup-induced
+                // rebuild has settled.  Qt silently falls back to SDR on non-HDR
+                // systems even with _qt_sg_hdr_format set, so the real format can
+                // only be read back from the live swapchain.
+                //
+                // This must not run off a fixed timer: showFullScreen/showNormal
+                // recreate the swapchain, and sampling mid-rebuild yields a stale
+                // or not-yet-negotiated format.  A false SDR result is the worst
+                // outcome — Main.qml's startup cover lifts as soon as the value is
+                // defined, while HdrPqOverlay keeps its PQ shader off, so the sRGB
+                // UI reaches the HDR10 swapchain raw and blows out white.
+                // frameSwapped means a frame was presented, i.e. the swapchain
+                // exists and its format is final.
+                auto done = std::make_shared<bool>(false);
+                auto detect = [rootWin, ctx, playbackCtrl, done]() {
+                    if (*done)
+                        return;
+                    *done = true;
+                    bool hdr = false;
+                    if (auto *sc = rootWin->swapChain()) {
+                        hdr = sc->format() != QRhiSwapChain::SDR;
+                    } else {
+                        qWarning() << "HDR detect: no swapchain, assuming SDR";
+                    }
+                    ctx->setContextProperty("_hdrActive", hdr);
+                    qDebug() << "HDR swapchain active:" << hdr;
+
+                    // Tell mpv the display capability so it picks the right target colorspace.
+                    // HDR → PQ/BT.2020, SDR → sRGB/BT.709. Avoids washed-out video on SDR screens.
+                    playbackCtrl->mpv()->updateHdrDisplayActive(hdr);
+                };
+
+                QObject::connect(rootWin, &QQuickWindow::frameSwapped, rootWin, detect,
+                                 Qt::ConnectionType(Qt::QueuedConnection | Qt::SingleShotConnection));
+                // Fallback: without this, a window that never presents a frame would
+                // leave _hdrActive undefined and the startup cover black forever.
+                QTimer::singleShot(2000, rootWin, detect);
             });
-        });
-
-        // Detect actual swapchain HDR status after warmup creates it.
-        // Qt silently falls back to SDR on non-HDR systems even with _qt_sg_hdr_format set.
-        QTimer::singleShot(300, rootWin, [rootWin, ctx = qmlEngine.rootContext(), playbackCtrl]() {
-            bool hdr = false;
-            if (auto *sc = rootWin->swapChain()) {
-                hdr = sc->format() != QRhiSwapChain::SDR;
-            }
-            ctx->setContextProperty("_hdrActive", hdr);
-            qDebug() << "HDR swapchain active:" << hdr;
-
-            // Tell mpv the display capability so it picks the right target colorspace.
-            // HDR → PQ/BT.2020, SDR → sRGB/BT.709. Avoids washed-out video on SDR screens.
-            playbackCtrl->mpv()->updateHdrDisplayActive(hdr);
         });
     }
 
