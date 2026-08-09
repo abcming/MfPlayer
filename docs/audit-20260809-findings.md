@@ -1,7 +1,7 @@
 # MfPlayer 全仓库审计 — 2026-08-09
 
 四单只读审计（codex / blueprint 流程），分区互不重叠，每单自行选取维度。
-共 **26 条** finding。
+共 **26 条** finding。**已核实 10 条，剩 16 条待核实**（2026-08-10）。
 
 ## 怎么用这个文档
 
@@ -19,7 +19,10 @@
 
 ---
 
-## 已核实（3 条）
+> **路径更正**：`embyclient.cpp` 的真实路径是 `core/providers/emby/embyclient.cpp`（下面多一层 `emby/`）。
+> 原报告里的位置都少写了这一层。
+
+## 已核实（10 条）
 
 ### A-1 · ImageProvider 在 reader 线程无保护读取 `m_imageCache`
 - **状态**：`已核实` — 实锤
@@ -90,6 +93,153 @@ D3D11 / Vulkan 路径不经过这里，Windows 主路径不受影响。
 
 ---
 
+## D-3 · 失败路径照调成功回调，而且错误信号没人接
+- **状态**：`已核实` · **老王定级**：中 · **核实后**：**中偏高**
+- **位置**：`core/providers/emby/embyclient.cpp:166-175`、`:186-195`、`:523`、`:530`、`:539`、`:546`
+
+```cpp
+if (!r.ok()) {
+    if (r.httpStatus == 401) emit guard->tokenExpired();
+    else                     emit guard->networkError(r.errorString());
+}
+cb(QJsonDocument::fromJson(r.ok() ? r.body : QByteArray()));   // ← 无条件
+```
+
+`postJson` / `deleteJson` 失败时只是"顺便喊一声"，callback 照调。
+四个调用点全中：`markPlayed` / `markUnplayed` / `addFavorite` / `removeFavorite`
+一律无条件 `emit playedStatusChanged(id, true)` / `favoriteChanged(id, true)`。
+
+**比原报告更严重的一点**：`networkError` 全仓库 **3 处 emit、0 个 connect** ——
+它是个死信号。所以断网点收藏时用户连错误提示都看不到，红心照亮，服务器上什么都没发生，
+本地缓存还被写成已收藏。
+
+修这条要连带决定 `networkError` 到底接不接 —— 不接的话，失败就只能靠 UI 不变来体现。
+
+---
+
+## 根因一：异步响应不带请求身份（D-1 / D-2 / D-4）
+
+三条是同一个形状 —— 响应回来时用「**当前**的成员变量」推断「这个响应属于谁」。
+飞行期间成员变量被改过，判断就错，而且错得静默。
+
+### D-1 · `librariesFetched` 的 generation 守卫是摆设
+- **状态**：`已核实` · **老王定级**：中 · **核实后**：中
+- **位置**：`core/server/servermanager.cpp:44`、`:66`、`:89`、`:169`
+
+```cpp
+// switchToServer()
+++m_serverGeneration;                          // :66
+m_librariesGeneration = m_serverGeneration;    // :89  ← 同一次里跟着设成一样
+// onLibrariesFetched()
+if (m_librariesGeneration != m_serverGeneration) return;   // :169  ← 永远为真
+```
+
+两个变量在每次切换里被**同步更新**，所以这个判断拦不下任何东西。
+连切 A→B→C，A 的库列表回来照样通过，被当成 C 的发出去。
+
+唯一有效的场景是 `addServer()`（:44）：那里 `++m_serverGeneration` 在前、
+`m_librariesGeneration` 要等 `loginSuccess`（:55）才设，中间存在真实窗口。
+**即：这个守卫只在登录期间有效，切换已登录服务器时完全失效。**
+
+### D-2 · `seasonsFetched` / `episodesFetched` 不带 id，且污染会自我放大
+- **状态**：`已核实` · **老王定级**：中 · **核实后**：**中偏高**
+- **位置**：`core/providers/emby/embyclient.cpp:238`、`:251`、`core/detail/detailmanager.cpp:259`、`:264`、`:269`
+
+信号签名只有 `QJsonArray`，不带 `seriesId` / `seasonId`。
+`DetailManager` 两个槽全程用当前成员变量：
+
+```cpp
+void DetailManager::onSeasonsFetched(const QJsonArray &seasons) {
+    m_cache->putSeasons(m_currentSeriesId, sorted);                 // :259 污染 SQLite
+    ...
+    m_currentSeasonId = sorted.first().toObject()["Id"].toString(); // :263
+    m_emby->fetchEpisodes(m_currentSeriesId, m_currentSeasonId);    // :264 ← B 的剧集 id 配 A 的季 id
+}
+```
+
+比原报告更狠的两点：
+1. **持久化** —— `putSeasons` / `putEpisodes` 写的是 SQLite，污染不随重启消失。
+2. **自我放大** —— :264 会立刻用错位的组合再发一个请求，回来再污染一次集缓存。
+
+另外 :261 的 `emit seasonsChanged()` 是**无参全局信号** —— 这正是 E-1 的另一半。
+
+### D-4 · `onItemsFetched` 只比 parentId，不看 generation
+- **状态**：`已核实` · **老王定级**：中 · **核实后**：中
+- **位置**：`core/library/librarybrowser.cpp:504`、`:272`、`:283`
+
+```cpp
+if (parentId != m_currentLibraryId) return;   // :504 ← 唯一的守卫
+m_contentModel->setItems(items);              // :507
+```
+
+`m_browseGeneration` 在 `setLibraryTab` / `setSortBy` / `setFilter`（:194 / :301 / :317）
+都自增了，但这些操作**不改 parentId**，守卫形同虚设。只有 `loadMore()`（:272 捕获、
+:283 校验）真正用了它。
+
+而且 :526-527 会接着按**新**条件 `loadMore()` 续拉，于是列表变成旧排序首屏 + 新排序续页。
+
+---
+
+## 根因二：QML 侧不校验数据/事件属于当前页（E-1 / E-2 / E-3）
+
+### E-1 · `onSeasonsChanged` 的守卫验错了对象
+- **状态**：`已核实` · **老王定级**：中 · **核实后**：中
+- **位置**：`ui/qml/pages/DetailPage.qml:123`
+
+```qml
+function onSeasonsChanged() {
+    if (!detailRoot.itemData || detailRoot.itemData.Id !== detailRoot.itemId) return
+    ...
+    detailRoot.currentSeasonIdx = 0
+}
+```
+
+**守卫是存在的**，但它检查的是「我自己的 itemData 跟我自己的 itemId 对不对得上」——
+留在 StackView 里的后台页 A 当然对得上，它是 A 的数据配 A 的 id。
+**它验的是内部一致性，不是事件归属。**
+
+失败路径：详情页 A 选了第 3 季 → 从 A push 到别的详情页（点相似影片/演员）→
+打开剧集 B 触发 `Detail.fetchSeasons(B)` → `emit seasonsChanged()` 广播 →
+A 的守卫通过 → `A.currentSeasonIdx = 0`，"季选择状态保持"被打掉。
+
+### E-2 · `itemData` 在 Emby 换集路径上永不更新
+- **状态**：`已核实` · **老王定级**：中 · **核实后**：**中偏高**
+- **位置**：`ui/qml/pages/PlayerPage.qml:56`、`:61`、`:164`、`:168-178`
+
+`itemData` 在整个 PlayerPage 里只有三处引用：声明（:56）、`_versionSources` 绑定读取（:61）、
+**local 分支**置 null（:164）。`switchEpisode()` 的 **Emby 分支清了 7 个属性
+（itemId / startTimeTicks / episodeTitle / episodeSubtitle / mediaSourceId /
+audioIndex / subtitleIndex），唯独没清 `itemData`**。
+
+所以不是"切下一集后版本菜单是上一集的" —— 是**整个 PlayerPage 生命周期里，
+版本菜单一直是最初从 DetailPage 传进来那一集的**。选中即用错误的 MediaSourceId 起播。
+
+`Detail.browseItem(ep.itemId)`（:176）刷新的是 Detail 单例，不是这个 property，救不了。
+
+### E-3 · 400ms 入场 Timer 落在 pop 过渡的存活窗口里
+- **状态**：`已核实` · **老王定级**：中 · **核实后**：中
+- **位置**：`ui/qml/pages/PlayerPage.qml:78`、`ui/qml/pages/DetailPage.qml:81`、`ui/qml/theme/Nav.qml:21`
+
+两个页面都是 `Component.onCompleted: timer.start()`，interval 400ms，
+**退场时既不 stop 也不检查 `StackView.status`**（全文件搜 `onDeactivating` /
+`Component.onDestruction` 只有 PlayerPage:740 的 `setSubPos(100)`）。
+
+`Nav.pushDetail` 走 `pageStack.push(detailPage, {...})` 的 Component 形式，
+pop 后销毁发生在过渡**结束之后**：
+
+```
+t=0     push，timer 启动（400ms）
+t=350   push 动画完成
+t≈360   用户返回 → pop 开始，popExit 动画 350ms
+t=400   timer 触发 ← 组件还活着，要到 t≈710 才销毁
+t=710   销毁
+```
+
+- DetailPage → `Detail.browseItem(itemId)`，污染已经离开的页面对应的共享 Detail 单例
+- PlayerPage → `Playback.playItem(...)`，**在用户已经退出的播放器上起播**
+
+---
+
 ## 未核实 · 单 1 · playback + mpv（2 条）
 
 | # | 位置 | 摘要 | 老王定级 |
@@ -111,14 +261,12 @@ D3D11 / Vulkan 路径不经过这里，Windows 主路径不受影响。
 
 > 单 2 备注：CurlEngine 完整读过（easy handle / slist / Task / 取消路径 / 回调销毁引擎），无达到门槛的问题。
 
-## 未核实 · 单 3 · library / detail / server / settings / media / providers（9 条）
+## 未核实 · 单 3 · library / detail / server / settings / media / providers（5 条）
+
+> D-1 / D-2 / D-3 / D-4 已于 2026-08-10 核实，移到上面。
 
 | # | 位置 | 摘要 | 老王定级 |
 |---|---|---|---|
-| D-1 | `servermanager.cpp:89`、`:167`、`embyclient.cpp:198` | `m_librariesGeneration` 是共享"当前代"，`librariesFetched` 不带发起时的 generation 或服务器标识；连续切 A→B→C 时旧响应仍满足相等检查，旧库列表被当成 C 的发出 | 中 |
-| D-2 | `embyclient.cpp:237`、`:250`、`detailmanager.cpp:257`、`:268` | `seasonsFetched`/`episodesFetched` 不带 `seriesId/seasonId`，DetailManager 用可变的当前 ID 写缓存 → S1 的集列表被写进 `(seriesId, S2)` 键下，持久污染 | 中 |
-| D-3 | `embyclient.cpp:165`、`:185`、`:523`、`:539` | `postJson()`/`deleteJson()` 在 `!r.ok()` 时发 `networkError` 后**仍无条件调业务 callback** → 断网时收藏/已看谎报成功并污染本地状态 | 中 |
-| D-4 | `librarybrowser.cpp:498`、`:504`、`:525` | `m_browseGeneration` 只被 `loadMore()` 捕获；首屏走 `onItemsFetched()` 只比 `parentId`，同库内切排序/筛选/Tab 时旧响应能通过 → 混合排序列表、重复或缺项 | 中 |
 | D-5 | `mediamodel.cpp:62`、`librarybrowser.cpp:181`、`:500` | `size + firstId` 指纹碰撞：库中部新增一部影片时数量与首个 ID 都不变，网络首屏被跳过，分页却按服务器新顺序续拉 → 当前列表重复一项、缺一项 | 中 |
 | D-6 | `librarybrowser.cpp:73`、`:408`、`:420` | 搜索防抖只停未触发的 timer，不失效已发出的请求；输入缩短后旧结果回填空白搜索页。人物响应仅靠布尔值路由，连续搜索会互相吞掉 | 低 |
 | D-7 | `librarybrowser.cpp:329`、`embyclient.cpp:646`、`:504` | `browsePerson()` 的 `FetchParams` 不设 `parentId`，回来必然被 `parentId != m_currentLibraryId` 丢弃 → 人物浏览点了没反应（**注：老王看不到 QML，已自行降级；需结合单 4 一起判**） | 低 |
@@ -127,13 +275,12 @@ D3D11 / Vulkan 路径不经过这里，Windows 主路径不受影响。
 
 > 单 3 备注：`updateCardField()` 的传播覆盖完整；similar/person/nextUp 的响应 ID 守卫有效；`MediaModel::removeItem()` 正确失效指纹并重建索引。
 
-## 未核实 · 单 4 · ui/qml（7 条）
+## 未核实 · 单 4 · ui/qml（4 条）
+
+> E-1 / E-2 / E-3 已于 2026-08-10 核实，移到上面。
 
 | # | 位置 | 摘要 | 老王定级 |
 |---|---|---|---|
-| E-1 | `DetailPage.qml:126` | 每个留在 StackView 里的 DetailPage 都连着全局 `Detail.seasonsChanged`，且不校验事件属于哪个剧集 → 打开剧集 B 会把后台 A 的季选择重置为 0，破坏"季选择状态保持" | 中 |
-| E-2 | `PlayerPage.qml:60`、`:150` | `_versionSources` 只要 `itemData.MediaSources` 非空就采用，不校验它属于当前 `itemId`；`switchEpisode()` 不清 `itemData` → 切下一集后版本菜单仍是上一集的，选中会用错的 MediaSourceId 起播 | 中 |
-| E-3 | `PlayerPage.qml:78`、`DetailPage.qml:81` | 两个 400ms Timer 在 `Component.onCompleted` 启动，退场时不停止也不检查是否仍是当前项。入场 350ms / 退场 350ms，约 360ms 时返回必定撞上 → 后台重新起播、或跨详情页污染共享模型 | 中 |
 | E-4 | `LibraryGridView.qml:221`、`:227` | 点击分支只处理 Studio/Genre/Movie/Series/Episode；「文件夹」Tab 里真正的 Folder 项落到兜底分支，只调 `Detail.browseItem()`，既不进目录也不 push 详情 → 点了没反应 | 中 |
 | E-5 | `BrowsePage.qml:1284`、`:1326` | UNC URL `file://NAS/share/x.mkv` 正则去掉 `file://` 后变成相对路径 `NAS/share/x.mkv`，丢掉 UNC 根前缀 → 从 `\\NAS\Videos` 播放/拖入失败 | 低 |
 | E-6 | `PlayControlsRow.qml:190`、`:227` | 「下一集」进度的分子取 `nextEpisode.PlaybackPositionTicks`，分母却取 Series 的 `RunTimeTicks` → 空进度条或荒谬的剩余时间 | 低 |
@@ -146,12 +293,14 @@ D3D11 / Vulkan 路径不经过这里，Windows 主路径不受影响。
 ## 建议的下一步顺序
 
 1. **A-1** — 唯一的高危，而且要重做一个既定决策。先想清楚方案再动手，别直接加锁。
-2. **D-3** — 断网时谎报成功，是"用户看到的和服务器上的不一致"，一眼可验。
-3. **A-2** — 已核实，修法要和今天那个 `m_fileLoaded` 的改动放一起想（同属播放结算链）。
-4. **D-1 / D-2 / D-4** — 三条同形状：**异步响应不带请求身份**。可以一起看，多半是同一个修法。
-5. **E-1 / E-2 / E-3** — 三条同形状：**QML 侧不校验数据/事件属于当前页**。同上，一起看。
-6. **A-3** — 实锤但只影响 OpenGL 后端，Windows 主路径碰不到，可以缓。
-7. 其余低危按需。
+2. **E-2** — 一行的事（`switchEpisode` 的 Emby 分支补 `itemData = null`），收益却是"版本菜单不再指向错误的媒体源"。性价比最高，先修这个。
+3. **D-3** — 修法明确：`if (!r.ok()) return;`。但要连带决定 `networkError` 接不接（现在是死信号）。
+4. **D-2** — 污染写进 SQLite 且会自我放大一次，四条 D 里危害最实。
+5. **D-1 / D-4** — 与 D-2 同形状：**异步响应不带请求身份**。三条一个修法：把请求身份放进响应，回调里比对。D-4 最省事（`onItemsFetched` 加 generation 参数）。
+6. **E-1 / E-3** — 同形状：**QML 侧不校验数据/事件属于当前页**。E-1 是把守卫从"验自己内部一致"改成"验事件归属"；E-3 是退场时 stop timer 或加 `StackView.status` 检查。
+7. **A-2** — 修法要和 `m_fileLoaded` 的改动放一起想（同属播放结算链）。
+8. **A-3** — 实锤但只影响 OpenGL 后端，Windows 主路径碰不到，可以缓。
+9. 其余 16 条未核实的，**核实之前一律不许开修**。
 
 ## 今天已修（不在上表内）
 
