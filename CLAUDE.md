@@ -284,4 +284,4 @@ cmake --build /root/myproject/mfplayer/build
 - **CurlEngine 别改 socket-action 事件驱动** (2026-07 试过, 已回退): h2 multiplex pipe-wait
   的排队传输会因 curl timerCallback 收到 -1/STOP 而事件断流, 干等到假超时 (实测 Emby 场景
   "什么都加载不了"); Windows QSocketNotifier 的 FD_WRITE 边缘触发语义也未验证。
-  10ms 轮询每请求只多 ~5ms, 不值得再冒险
+  10ms 轮询每请求只多 ~5ms, 不值得再冒险，轮询兼作 CDN 限流，别调小。
