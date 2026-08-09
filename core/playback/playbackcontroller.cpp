@@ -45,6 +45,7 @@ void PlaybackController::connectMpvSignals() {
     connect(m_mpv, &MpvController::durationChanged, this, &PlaybackController::durationChanged);
     connect(m_mpv, &MpvController::playingChanged, this, &PlaybackController::playingChanged);
     connect(m_mpv, &MpvController::volumeChanged, this, &PlaybackController::volumeChanged);
+    connect(m_mpv, &MpvController::fileLoaded, this, [this]() { m_fileLoaded = true; });
     connect(m_mpv, &MpvController::endOfFile, this, &PlaybackController::endOfFile);
     connect(m_mpv, &MpvController::errorOccurred, this, &PlaybackController::playError);
     connect(m_mpv, &MpvController::speedChanged, this, &PlaybackController::speedChanged);
@@ -113,7 +114,12 @@ void PlaybackController::initProgressTimer() {
 // 这里, 否则上一集的观看进度不落 Emby。
 void PlaybackController::reportStopForCurrent() {
     if (m_currentPlayItemId.isEmpty()) return;
-    qint64 finalTicks = static_cast<qint64>(m_mpv->position() * Constants::kTicksPerSecond);
+    // 加载失败/加载中就退出时 mpv 从未打开过文件, position 是 0 —— 用它上报会
+    // 把服务端和本地缓存里的续播进度一起抹成 0。这种情况按起播位置上报:
+    // 进度写回原值 (等于没动), PlaySession 也能正常关闭。
+    qint64 finalTicks = m_fileLoaded
+        ? static_cast<qint64>(m_mpv->position() * Constants::kTicksPerSecond)
+        : m_startTimeTicks;
     m_emby->reportPlaybackStop(m_currentPlayItemId, finalTicks,
         m_currentPlaySessionId, m_currentMediaSourceId);
     updateCachedProgress(m_currentPlayItemId, finalTicks);
@@ -126,6 +132,9 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
     // 手动切集/切版本时结束上一个 PlaySession, 观看进度才会落 Emby
     // (自动连播路径无影响: endOfFile 处理器已上报并清空了 itemId)
     reportStopForCurrent();
+    // 顺序要紧: 上面结算的是"上一个" item, 重置必须排在它后面
+    m_fileLoaded = false;
+    m_startTimeTicks = startTimeTicks;
     m_currentPlayItemId = itemId;
     m_currentItemDetail = m_cache->getItemDetail(itemId);
     int gen = ++m_playGeneration;
@@ -305,7 +314,9 @@ void PlaybackController::toggleFullscreen() {
 }
 
 void PlaybackController::onProgressTimer() {
-    if (m_currentPlayItemId.isEmpty() || !m_mpv->playing()) return;
+    // m_fileLoaded: play() 一发出 loadfile 就把 playing 置 true, 加载还没成功时
+    // position 是 0 —— 少了这道守卫, 加载卡过 10 秒就会把进度上报成 0
+    if (m_currentPlayItemId.isEmpty() || !m_fileLoaded || !m_mpv->playing()) return;
     qint64 ticks = static_cast<qint64>(m_mpv->position() * Constants::kTicksPerSecond);
     m_emby->reportPlaybackProgress(m_currentPlayItemId, ticks,
                                     m_currentPlaySessionId, m_currentMediaSourceId);
