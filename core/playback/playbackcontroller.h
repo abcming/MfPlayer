@@ -111,5 +111,10 @@ private:
     QString m_currentMediaSourceId;
     int m_pendingSubIdx = -2;
     int m_playGeneration = 0;
+    // 本次播放是否已成功 FILE_LOADED。未加载成功时 mpv 的 position 还是 0,
+    // 拿它上报会把 Emby 上已有的续播进度抹掉 (m_hasVideo 不能当判据 —
+    // 正常 EOF 结束时它也是 false, 会把该上报的也堵掉)
+    bool m_fileLoaded = false;
+    qint64 m_startTimeTicks = 0;
     QJsonObject m_currentItemDetail;
 };
