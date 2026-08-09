@@ -173,6 +173,11 @@ Item {
             mediaSourceId = ""
             audioIndex = -1
             subtitleIndex = -1
+            // itemData 是 DetailPage 进来时传的那一集, 这里不清就会一直挂着 ——
+            // _versionSources 优先吃它, 版本菜单整场都停在最初那集, 选中会用错的
+            // MediaSourceId 起播。清掉后自动回落 Playback.currentItemDetail,
+            // 那边 playItem() 已经换成新集, PlaybackInfo 回来再补 MediaSources
+            itemData = null
             Detail.browseItem(ep.itemId)
             Playback.playItem(ep.itemId, 0, "", audioIndex, subtitleIndex)
         }
