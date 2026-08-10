@@ -67,7 +67,6 @@ public:
 public slots:
     void login(const QString &username, const QString &password);
     void fetchLibraries();
-    void fetchItems(const QString &parentId, const QString &includeTypes = QString(), bool recursive = true);
     void fetchItemDetail(const QString &itemId);
     void fetchSeasons(const QString &seriesId);
     void fetchEpisodes(const QString &seriesId, const QString &seasonId);
@@ -116,8 +115,6 @@ public slots:
     Q_INVOKABLE void fetchItemsFiltered(const FetchParams &params);
     void fetchItemsFiltered(const FetchParams &params, JsonArrayCallback callback);
 
-    // Suggestions (uses /Users/{UserId}/Suggestions endpoint)
-    Q_INVOKABLE void fetchSuggestions(const QString &parentId, const QString &includeTypes = QString());
 
     // Item counts
     Q_INVOKABLE void fetchItemCounts();
@@ -131,10 +128,6 @@ public slots:
     // Hide from resume
     Q_INVOKABLE void hideFromResume(const QString &itemId);
 
-    // Persons list
-    // 三个都是回调式 —— 原来共用一个 personsFetched 信号, 收藏页和搜索同时在飞时
-    // 先回来的那个会被判给错误的分支 (见 audit D-6)。回调天然带请求身份, 不会串
-    void fetchPersons(const QString &parentId, int limit, JsonArrayCallback callback);
     void fetchFavPersons(int limit, JsonArrayCallback callback);
     void searchPersons(const QString &term, int limit, JsonArrayCallback callback);
     void searchItems(const QString &term, const QString &includeTypes, int limit,

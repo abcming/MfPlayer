@@ -54,17 +54,6 @@ public slots:
     void clearContentCache(QPointer<QObject> guard);
     void clearImageCache(const QString &cacheDir, QPointer<QObject> guard);
 
-    // ── CredentialStore ──
-    void addServer(const QString &serverUrl, const QString &username,
-                   const QString &token, const QString &userId,
-                   QPointer<QObject> guard);
-    void getServers(QPointer<QObject> guard);
-    void getActiveServer(QPointer<QObject> guard);
-    void setActiveServer(int serverId, QPointer<QObject> guard);
-    void removeServer(int serverId, QPointer<QObject> guard);
-    void updateServerToken(int serverId, const QString &token,
-                           QPointer<QObject> guard);
-    void getServerById(int serverId, QPointer<QObject> guard);
 
 signals:
     // ── Lifecycle ──
@@ -87,13 +76,6 @@ signals:
     void contentCleared();
     void imagesCleared();
 
-    // ── CredentialStore results ──
-    void serverAdded(int serverId);
-    void serversFetched(QJsonArray servers);
-    void activeServerFetched(QJsonObject server);
-    void serverRemoved(int serverId);
-    void serverTokenUpdated(int serverId);
-    void serverByIdFetched(QJsonObject server);
 
     // ── Errors ──
     void dbError(const QString &message);

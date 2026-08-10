@@ -207,23 +207,6 @@ void EmbyClient::fetchLibraries() {
     });
 }
 
-void EmbyClient::fetchItems(const QString &parentId, const QString &includeTypes, bool recursive) {
-    QUrlQuery query;
-    query.addQueryItem("ParentId", parentId);
-    query.addQueryItem("SortBy", "SortName");
-    query.addQueryItem("SortOrder", "Ascending");
-    if (recursive)
-        query.addQueryItem("Recursive", "true");
-    query.addQueryItem("Fields", EmbyFields::ListItems);
-    if (!includeTypes.isEmpty())
-        query.addQueryItem("IncludeItemTypes", includeTypes);
-
-    QString cacheKey = parentId + ":" + includeTypes + ":" + (recursive ? "1" : "0");
-    getJson("/emby/Users/" + m_userId + "/Items", query, [this, parentId, cacheKey](const QJsonDocument &doc) {
-        emit itemsFetched(doc.object()["Items"].toArray(), parentId, cacheKey);
-    });
-}
-
 void EmbyClient::fetchItemDetail(const QString &itemId) {
     QUrlQuery query;
     query.addQueryItem("Fields", EmbyFields::Detail);
@@ -694,22 +677,6 @@ void EmbyClient::fetchItemsFiltered(const FetchParams &p, JsonArrayCallback call
     });
 }
 
-void EmbyClient::fetchSuggestions(const QString &parentId, const QString &includeTypes) {
-    QUrlQuery query;
-    if (!parentId.isEmpty())
-        query.addQueryItem("ParentId", parentId);
-    query.addQueryItem("Limit", "50");
-    query.addQueryItem("Fields", EmbyFields::ListItems);
-    query.addQueryItem("ImageTypeLimit", "1");
-    query.addQueryItem("EnableTotalRecordCount", "false");
-    if (!includeTypes.isEmpty())
-        query.addQueryItem("IncludeItemTypes", includeTypes);
-
-    getJson("/emby/Users/" + m_userId + "/Suggestions", query, [this, parentId](const QJsonDocument &doc) {
-        emit itemsFetched(doc.object()["Items"].toArray(), parentId, parentId + ":suggestions");
-    });
-}
-
 void EmbyClient::fetchSuggestionsResume(const QString &parentId) {
     QUrlQuery query;
     query.addQueryItem("Limit", "12");
@@ -780,23 +747,6 @@ void EmbyClient::hideFromResume(const QString &itemId) {
 }
 
 // ── Persons ──
-
-void EmbyClient::fetchPersons(const QString &parentId, int limit, JsonArrayCallback callback) {
-    QUrlQuery query;
-    query.addQueryItem("UserId", m_userId);
-    query.addQueryItem("Recursive", "true");
-    query.addQueryItem("Limit", QString::number(limit));
-    query.addQueryItem("Fields", EmbyFields::Card);
-    query.addQueryItem("ImageTypeLimit", "1");
-    query.addQueryItem("SortBy", "SortName");
-    query.addQueryItem("SortOrder", "Ascending");
-    if (!parentId.isEmpty())
-        query.addQueryItem("ParentId", parentId);
-
-    getJson("/emby/Persons", query, [callback](const QJsonDocument &doc) {
-        callback(doc.object()["Items"].toArray());
-    });
-}
 
 void EmbyClient::fetchFavPersons(int limit, JsonArrayCallback callback) {
     QUrlQuery query;

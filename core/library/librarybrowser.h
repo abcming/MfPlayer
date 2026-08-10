@@ -95,7 +95,6 @@ public slots:
     Q_INVOKABLE void setLibraryTab(int tab);
     Q_INVOKABLE void browseGenre(const QString &genreId, const QString &genreName);
     Q_INVOKABLE void browseStudio(const QString &studioId, const QString &studioName);
-    Q_INVOKABLE void browsePerson(const QString &personId, const QString &personName);
     Q_INVOKABLE void loadMore();
     Q_INVOKABLE void fetchHome();
     Q_INVOKABLE void refreshResume() { m_emby->fetchResume(12); }
@@ -121,7 +120,6 @@ signals:
     void filterFavoritesChanged();
     void filterPlayedChanged();
     void searchHintsFetched(const QJsonArray &hints);
-    void personBrowseStarted(const QString &name);
 
 private:
     void onItemsFetched(const QJsonArray &items, const QString &parentId, const QString &cacheKey, int totalRecordCount);

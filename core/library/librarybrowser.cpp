@@ -325,17 +325,6 @@ void LibraryBrowser::browseStudio(const QString &studioId, const QString &studio
         .studioIds = studioId});
 }
 
-void LibraryBrowser::browsePerson(const QString &personId, const QString &personName) {
-    m_browseContext = personName;
-    ++m_browseGeneration;
-    m_loadingMore = false;
-    m_paginationLimit = 0;
-    emit currentTabChanged();
-    emit browseContextChanged();
-    emit personBrowseStarted(personName);
-    dispatchFetch({.personIds = personId});
-}
-
 void LibraryBrowser::fetchHome() {
     m_emby->fetchItemCounts();
     m_emby->fetchResume(12);
