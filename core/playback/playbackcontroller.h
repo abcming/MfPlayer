@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QVariant>
 #include <QTimer>
 #include <QWindow>
@@ -19,6 +20,7 @@ class PlaybackController : public QObject {
     Q_PROPERTY(bool fullscreen READ fullscreen NOTIFY fullscreenChanged FINAL)
     Q_PROPERTY(MpvController* mpv READ mpv CONSTANT)
     Q_PROPERTY(QJsonObject currentItemDetail READ currentItemDetail NOTIFY currentItemDetailChanged FINAL)
+    Q_PROPERTY(QJsonArray currentMediaSources READ currentMediaSources NOTIFY currentMediaSourcesChanged FINAL)
     Q_PROPERTY(double speed READ speed NOTIFY speedChanged FINAL)
     Q_PROPERTY(QVariantList tracks READ tracks NOTIFY tracksChanged FINAL)
     Q_PROPERTY(int currentSid READ currentSid NOTIFY sidChanged FINAL)
@@ -36,6 +38,7 @@ public:
     bool fullscreen() const;
     MpvController *mpv() const { return m_mpv; }
     QJsonObject currentItemDetail() const { return m_currentItemDetail; }
+    QJsonArray currentMediaSources() const { return m_currentMediaSources; }
     double speed() const { return m_mpv->speed(); }
     QVariantList tracks() const { return m_mpv->tracks(); }
     int currentSid() const { return m_mpv->currentSid(); }
@@ -82,6 +85,7 @@ signals:
     void resumeProgressUpdated();
     void localPlaylistReady(QVariantList playlist);
     void currentItemDetailChanged();
+    void currentMediaSourcesChanged();
     void speedChanged();
     void tracksChanged();
     void sidChanged();
@@ -116,5 +120,11 @@ private:
     // 正常 EOF 结束时它也是 false, 会把该上报的也堵掉)
     bool m_fileLoaded = false;
     qint64 m_startTimeTicks = 0;
+    // **只装完整详情, 或者空。** 不许往里塞半截对象 —— 它会被 updateCachedProgress()
+    // 原样 putItemDetail() 写回缓存, 而那是整体覆盖, 一个没有 Id/Name/RunTimeTicks
+    // 的壳会把完整详情顶掉 (内存 + SQLite 都是)
     QJsonObject m_currentItemDetail;
+    // MediaSources 的唯一权威来源: 起播时从详情里取, PlaybackInfo 回来后覆盖成更新鲜的。
+    // 单独放一份而不是塞进 m_currentItemDetail, 就是为了守住上面那条
+    QJsonArray m_currentMediaSources;
 };

@@ -55,14 +55,14 @@ Item {
     property string itemType: ""
     property var itemData: null
     // MediaSources for video version selector — prefer itemData (passed from DetailPage),
-    // fall back to Playback.currentItemDetail (populated from PlaybackInfo response).
+    // fall back to Playback.currentMediaSources (populated from PlaybackInfo response).
     // This covers episodes played from a series page where the episode detail wasn't pre-cached.
     property var _versionSources: {
         if (itemData && itemData.MediaSources && itemData.MediaSources.length)
             return itemData.MediaSources
-        let detail = Playback.currentItemDetail
-        if (detail && detail.MediaSources && detail.MediaSources.length)
-            return detail.MediaSources
+        let ms = Playback.currentMediaSources
+        if (ms && ms.length)
+            return ms
         return []
     }
     property double startTimeTicks: 0
@@ -175,7 +175,7 @@ Item {
             subtitleIndex = -1
             // itemData 是 DetailPage 进来时传的那一集, 这里不清就会一直挂着 ——
             // _versionSources 优先吃它, 版本菜单整场都停在最初那集, 选中会用错的
-            // MediaSourceId 起播。清掉后自动回落 Playback.currentItemDetail,
+            // MediaSourceId 起播。清掉后自动回落 Playback.currentMediaSources,
             // 那边 playItem() 已经换成新集, PlaybackInfo 回来再补 MediaSources
             itemData = null
             Detail.browseItem(ep.itemId)

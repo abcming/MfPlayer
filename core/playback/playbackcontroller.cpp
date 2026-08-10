@@ -75,8 +75,8 @@ void PlaybackController::connectMpvSignals() {
             } else if (m_currentMediaSourceId.isEmpty()) {
                 continue;  // no media source, can't construct subtitle URL
             } else {
-                // m_currentPlayItemId 而非 item["Id"]: 详情未预缓存时
-                // m_currentItemDetail 只有回填的 MediaSources, 没有 Id 字段
+                // m_currentPlayItemId 而非 m_currentItemDetail["Id"]: 详情未预缓存时
+                // 后者整个是空的 (MediaSources 现在单独放 m_currentMediaSources)
                 QString idx = QString::number(stream["Index"].toInt());
                 QString codec = stream["Codec"].toString().toLower();
                 fullUrl = m_emby->serverUrl() +
@@ -137,15 +137,13 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
     m_startTimeTicks = startTimeTicks;
     m_currentPlayItemId = itemId;
     m_currentItemDetail = m_cache->getItemDetail(itemId);
+    m_currentMediaSources = m_currentItemDetail["MediaSources"].toArray();
     int gen = ++m_playGeneration;
 
     // Resolve MediaSourceId from current item if not provided and available
     QString srcId = mediaSourceId;
-    if (srcId.isEmpty()) {
-        QJsonArray sources = m_currentItemDetail["MediaSources"].toArray();
-        if (!sources.isEmpty())
-            srcId = sources.first().toObject()["Id"].toString();
-    }
+    if (srcId.isEmpty() && !m_currentMediaSources.isEmpty())
+        srcId = m_currentMediaSources.first().toObject()["Id"].toString();
     m_currentMediaSourceId = srcId;
     m_pendingSubIdx = subtitleIndex;
 
@@ -161,14 +159,19 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
         // Populate MediaSources from fresh PlaybackInfo response so the
         // PlayerPage version selector works even when itemData was not
         // pre-cached (e.g. episodes played from a series page).
+        //
+        // 存进 m_currentMediaSources 而**不是** m_currentItemDetail —— 详情没预缓存时
+        // 后者是空的, 往里塞 MediaSources 就得到一个没有 Id/Name/RunTimeTicks 的壳,
+        // 而 updateCachedProgress() 会把它原样 putItemDetail() 写回, 整体覆盖掉
+        // 缓存里的完整详情。分开放, "m_currentItemDetail 要么完整要么空"才立得住
         if (!mediaSources.isEmpty()) {
-            m_currentItemDetail["MediaSources"] = mediaSources;
+            m_currentMediaSources = mediaSources;
             // 详情未预缓存时 (播放页直接切集) playItem 里解析不到 srcId —
             // 用 PlaybackInfo 的第一个 source 补上。否则 streamsForSelectedSource()
             // 永远匹配不到, 外挂字幕全被跳过, 字幕菜单也退化成 mpv 原始轨道名
             if (m_currentMediaSourceId.isEmpty())
                 m_currentMediaSourceId = mediaSources.first().toObject()["Id"].toString();
-            emit currentItemDetailChanged();
+            emit currentMediaSourcesChanged();
         }
         m_currentPlaySessionId = playSessionId;
         // 上报与 loadfile 并行 — 起播不依赖 Emby 回执, 省一个网络往返
@@ -231,6 +234,7 @@ void PlaybackController::playLocalFile(const QString &filePath) {
     reportStopForCurrent();  // 若正在播 Emby 条目, 先结束其 PlaySession
     // Clear stale Emby playback state
     m_currentItemDetail = {};
+    m_currentMediaSources = {};
     m_pendingSubIdx = -1;  // auto: let fuzzy matching decide
 
     // Reset sid to auto — a previous Emby play may have left a numeric sid
@@ -257,6 +261,7 @@ void PlaybackController::resume() { m_mpv->resume(); }
 void PlaybackController::stop() {
     ++m_playGeneration;  // cancel any pending playItem callbacks
     m_currentItemDetail = {};
+    m_currentMediaSources = {};
     reportStopForCurrent();
     m_progressTimer->stop();
     m_mpv->stop();
@@ -343,16 +348,15 @@ QString PlaybackController::subtitleTrackTitle(int sid) const {
 }
 
 QJsonArray PlaybackController::streamsForSelectedSource() const {
-    const QJsonObject &item = m_currentItemDetail;
-    QJsonArray sources = item["MediaSources"].toArray();
-    for (const QJsonValue &sv : sources) {
+    for (const QJsonValue &sv : m_currentMediaSources) {
         QJsonObject src = sv.toObject();
         if (src["Id"].toString() == m_currentMediaSourceId) {
             QJsonArray ms = src["MediaStreams"].toArray();
             if (!ms.isEmpty()) return ms;
         }
     }
-    return item["MediaStreams"].toArray();
+    // 回落到详情自带的顶层 MediaStreams (详情没预缓存时为空, 和改动前一致)
+    return m_currentItemDetail["MediaStreams"].toArray();
 }
 
 void PlaybackController::scanFolderForLocalPlaylistAsync(const QString &filePath) {
