@@ -48,7 +48,12 @@ void ServerManager::performLogin(const QString &serverUrl, const QString &userna
     disconnect(m_emby, &EmbyClient::loginFailed, this, nullptr);
     connect(m_emby, &EmbyClient::loginSuccess, this, [this, gen, serverUrl, username, password](const QString &token, const QString &userId) {
         if (gen != m_serverGeneration) return;
-        m_creds->addServer(serverUrl, username, password, token, userId);
+        // 登录成功的这台就是当前服务器。addServer 只在**新建**分支里置 is_active,
+        // 命中已有 URL+用户名时它只更新凭证和 last_used —— 而 restoreSession()
+        // 读的是 is_active (不是 last_used 排序), 不补这一句的话重登一台已保存的
+        // 服务器后, 重启会回到上一台
+        int serverId = m_creds->addServer(serverUrl, username, password, token, userId);
+        m_creds->setActiveServer(serverId);
         m_settings->saveLogin(serverUrl, username, token, userId);
         emit embyConnectedChanged();
         emit serverListChanged();
