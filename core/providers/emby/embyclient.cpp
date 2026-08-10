@@ -201,8 +201,9 @@ void EmbyClient::deleteJson(const QString &path,
 }
 
 void EmbyClient::fetchLibraries() {
-    getJson("/emby/Users/" + m_userId + "/Views", {}, [this](const QJsonDocument &doc) {
-        emit librariesFetched(doc.object()["Items"].toArray());
+    getJson("/emby/Users/" + m_userId + "/Views", {},
+            [this, serverUrl = m_serverUrl, userId = m_userId](const QJsonDocument &doc) {
+        emit librariesFetched(doc.object()["Items"].toArray(), serverUrl, userId);
     });
 }
 

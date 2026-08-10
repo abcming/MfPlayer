@@ -162,7 +162,10 @@ signals:
     void userIdChanged();
     void loginSuccess(const QString &token, const QString &userId);
     void loginFailed(const QString &error);
-    void librariesFetched(const QJsonArray &libraries);
+    // 带上发起时的 server + user: 响应回来时 EmbyClient 自己的 m_serverUrl/m_userId
+    // 可能已经被切走了, 拿"当前值"判断不出这个响应属于谁 (见 audit D-1)
+    void librariesFetched(const QJsonArray &libraries, const QString &serverUrl,
+                          const QString &userId);
     void itemsFetched(const QJsonArray &items, const QString &parentId, const QString &cacheKey, int totalRecordCount = -1);
     void itemDetailFetched(const QJsonObject &detail);
     // 带上请求身份: 响应回来时不许再用"当前"成员变量推断它属于谁 —— 飞行期间

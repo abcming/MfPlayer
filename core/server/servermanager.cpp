@@ -52,7 +52,6 @@ void ServerManager::performLogin(const QString &serverUrl, const QString &userna
         m_settings->saveLogin(serverUrl, username, token, userId);
         emit embyConnectedChanged();
         emit serverListChanged();
-        m_librariesGeneration = m_serverGeneration;
         m_emby->fetchLibraries();
     });
     connect(m_emby, &EmbyClient::loginFailed, this, [this, gen](const QString &error) {
@@ -86,7 +85,6 @@ void ServerManager::switchToServer(int serverId) {
     emit embyConnectedChanged();
     emit serverListChanged();
 
-    m_librariesGeneration = m_serverGeneration;
     m_emby->fetchLibraries();
 
     // If libraries come back empty, token may have expired — try re-login
@@ -141,7 +139,6 @@ bool ServerManager::restoreSession() {
             m_emby->setServer(url);
             m_emby->setAuth(token, userId);
             m_settings->saveLogin(url, username, token, userId);
-            m_librariesGeneration = m_serverGeneration;
             m_emby->fetchLibraries();
             emit embyConnectedChanged();
             return true;
@@ -155,7 +152,6 @@ bool ServerManager::restoreSession() {
     if (!srv.isEmpty() && !token.isEmpty() && !userId.isEmpty()) {
         m_emby->setServer(srv);
         m_emby->setAuth(token, userId);
-        m_librariesGeneration = m_serverGeneration;
         m_emby->fetchLibraries();
         emit embyConnectedChanged();
         return true;
@@ -164,9 +160,15 @@ bool ServerManager::restoreSession() {
     return false;
 }
 
-void ServerManager::onLibrariesFetched(const QJsonArray &libraries) {
+void ServerManager::onLibrariesFetched(const QJsonArray &libraries, const QString &serverUrl,
+                                       const QString &userId) {
     // Discard stale responses from a previous server connection
-    if (m_librariesGeneration != m_serverGeneration) return;
+    //
+    // 判据是响应自带的 server+user, 不是成员变量。原来比的是
+    // m_librariesGeneration != m_serverGeneration —— 那两个值在每条路径上都是
+    // "先设成相等, 紧接着 fetchLibraries()", 恒真, 拦不下任何东西。
+    // 连切 A→B→C 时 A 的库列表照样通过, 被当成 C 的发出去
+    if (serverUrl != m_emby->serverUrl() || userId != m_emby->userId()) return;
 
     // Token expiry recovery: if switching server and no libraries returned, try re-login
     if (libraries.isEmpty() && m_pendingSwitchServerId >= 0 && !m_pendingSwitchPassword.isEmpty()) {
@@ -184,7 +186,6 @@ void ServerManager::onLibrariesFetched(const QJsonArray &libraries) {
             m_settings->saveLogin(m_emby->serverUrl(), m_settings->embyUsername(), token, userId);
             emit embyConnectedChanged();
             emit serverListChanged();
-            m_librariesGeneration = m_serverGeneration;
             m_emby->fetchLibraries();  // retry with new token
         });
         connect(m_emby, &EmbyClient::loginFailed, this, [this, gen](const QString &error) {

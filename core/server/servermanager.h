@@ -44,7 +44,8 @@ signals:
 
 private:
     void performLogin(const QString &serverUrl, const QString &username, const QString &password);
-    void onLibrariesFetched(const QJsonArray &libraries);
+    void onLibrariesFetched(const QJsonArray &libraries, const QString &serverUrl,
+                            const QString &userId);
     void onTokenExpired();
 
     SettingsStore *m_settings;
@@ -52,7 +53,6 @@ private:
     CacheStore *m_cache;
     CredentialStore *m_creds;
     int m_serverGeneration = 0;
-    int m_librariesGeneration = 0;
     int m_pendingSwitchServerId = -1;
     QString m_pendingSwitchPassword;
     bool m_reauthing = false;
