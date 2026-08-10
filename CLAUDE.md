@@ -232,6 +232,13 @@ ioPool().start([guard, ...]() {
    (DebugOverlay 及其 params/stats 侦测链已于 2026-07 整体拆除: 组件从未被实例化,
    observeStatsProperties 却常开, 属白耗。需要诊断时按 I 用 mpv 内置 stats。)
 
+## 提交规范
+
+- **推送出去的东西一律不出现个人名字**。commit message、代码注释、文档全算在内。
+  需要标注来源时用中性表述：「实测拍板」「实机验证通过」「判断：……」，结论照写不变。
+- 署名固定 `Co-Authored-By: Claude <noreply@anthropic.com>`。
+- 破例发现得整改：工作区直接改，已推送的要重写历史 + force push，成本高，写之前就别写进去。
+
 ## 构建与部署
 
 ```sh
