@@ -1,5 +1,6 @@
 #include "core/cache/imagecacheprovider.h"
 #include "core/cache/cachestore.h"
+#include <QDir>
 #include <QSize>
 #include <QSizeF>
 #include <QImageReader>
@@ -91,21 +92,23 @@ QQuickTextureFactory *ImageCacheResponse::textureFactory() const {
 
 ImageCacheProvider::ImageCacheProvider(CacheStore *cache)
     : QQuickAsyncImageProvider()
-    , m_cache(cache)
+    , m_cacheRoot(QDir::cleanPath(cache->imageCacheDir()))
 {
 }
 
 QQuickImageResponse *ImageCacheProvider::requestImageResponse(const QString &id, const QSize &requestedSize) {
-    int slash = id.lastIndexOf('/');
-    QString hash = slash > 0 ? id.left(slash) : id;
+    // id = "<hash>/<base64url(绝对路径)>" — 路径由 CacheStore::providerUrl() 在主线程
+    // 解析好带过来。这个函数跑在 Qt 的 pixmap reader 线程, 不碰 CacheStore 的任何成员。
+    const int slash = id.lastIndexOf('/');
+    const QString hash = slash > 0 ? id.left(slash) : id;
 
-    // Fast path: memory cache hit — skip thread, pixmap set directly
+    // LRU 键只用 hash — 同一张图换个路径表示不该在 200 条的表里重复占位
     {
         QMutexLocker lock(&m_mutex);
-        auto it = m_memCache.find(id);
+        auto it = m_memCache.find(hash);
         if (it != m_memCache.end()) {
             m_lru.splice(m_lru.begin(), m_lru, it->second.lruIt);  // O(1) move to front
-            auto *resp = new ImageCacheResponse(id, QString(), requestedSize,
+            auto *resp = new ImageCacheResponse(hash, QString(), requestedSize,
                                                 &m_mutex, &m_memCache, &m_lru, kMaxEntries,
                                                 /*skipProcess=*/true);
             // Shallow copy (implicit sharing) — no decode thread was started
@@ -114,14 +117,19 @@ QQuickImageResponse *ImageCacheProvider::requestImageResponse(const QString &id,
         }
     }
 
-    // Cache miss: resolve file path, then decode on background thread
+    // Cache miss: 解出请求里带的路径。收口是硬的 —— 带路径的 provider 等于把
+    // 任意本地文件读取入口暴露给 QML, 必须卡死在缓存目录内, 越界一律当没有路径
+    // (process() 会给出透明图), 不放行也不"记个日志继续"。
     QString path;
-    {
-        QMutexLocker lock(&m_mutex);
-        path = m_cache->resolveImagePath(hash);
+    if (slash > 0) {
+        const QString decoded = QString::fromUtf8(QByteArray::fromBase64(
+            id.mid(slash + 1).toLatin1(), QByteArray::Base64UrlEncoding));
+        const QString clean = QDir::cleanPath(decoded);
+        if (QDir::isAbsolutePath(clean) && clean.startsWith(m_cacheRoot + '/'))
+            path = clean;
     }
 
-    return new ImageCacheResponse(id, path, requestedSize,
+    return new ImageCacheResponse(hash, path, requestedSize,
                                   &m_mutex, &m_memCache, &m_lru, kMaxEntries,
                                   /*skipProcess=*/false);
 }

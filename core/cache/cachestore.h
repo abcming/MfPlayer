@@ -37,7 +37,10 @@ public:
     void putImagePath(const QString &url, const QString &localPath);
     QString imageSavePath(const QString &url) const;
     Q_INVOKABLE QString cachedImageUrl(const QString &url);   // file:// URL if cached
-    QString resolveImagePath(const QString &urlHash) const;   // raw path for ImageCacheProvider
+    // "image://imgcache/<hash>/<base64url(path)>" — 路径在主线程解析好后随请求
+    // 一起交给 provider, reader 线程不再回头读 m_imageCache (见 .cpp 说明)
+    Q_INVOKABLE QString providerUrl(const QString &url) const;
+    QString imageCacheDir() const { return m_cacheDir; }      // provider 构造时取一次, 做路径收口
     Q_INVOKABLE void fetchImage(const QString &url);          // async download + cache
     void setSkipSslVerify(bool skip);
 

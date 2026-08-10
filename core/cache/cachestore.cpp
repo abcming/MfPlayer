@@ -340,13 +340,25 @@ QString CacheStore::imageSavePath(const QString &url) const {
     return m_cacheDir + "/" + hashUrl(url);
 }
 
-QString CacheStore::resolveImagePath(const QString &urlHash) const {
+QString CacheStore::providerUrl(const QString &url) const {
     // Trust the in-memory cache — files were verified at loadImageCache() time.
     // All accesses are on the main thread, no mutex needed.
-    auto it = m_imageCache.constFind(urlHash);
-    if (it != m_imageCache.constEnd())
-        return it->filePath;
-    return {};
+    //
+    // 路径必须在这里 (主线程) 解出来随请求带走: provider 的 requestImageResponse()
+    // 跑在 Qt 的 pixmap reader 线程, 它要是回头调 CacheStore 读 m_imageCache, 就和
+    // 主线程的四类写入 (启动装载/过期删除/下载完成/clear) 形成数据竞争 —— 启动批量
+    // insert 触发 rehash 时正好撞上首屏请求就是 UB。主线程本来就把准确路径算出来了,
+    // 带过去即可, 不必让 worker 回头读主线程对象。
+    //
+    // base64url 编码 (不是 percent-encoding): 编码后只有 A-Za-z0-9-_, 不含 '/',
+    // 也没有任何字符会被 QUrl 再解一次。Windows 盘符、空格、非 ASCII 路径全免疫。
+    const QString h = hashUrl(url);
+    auto it = m_imageCache.constFind(h);
+    if (it == m_imageCache.constEnd())
+        return {};
+    const QByteArray enc = it->filePath.toUtf8().toBase64(
+        QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
+    return "image://imgcache/" + h + "/" + QString::fromLatin1(enc);
 }
 
 QString CacheStore::cachedImageUrl(const QString &url) {

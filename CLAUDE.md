@@ -70,7 +70,9 @@ DetailManager (&app)          ← 同上, 裸指针
 
 qmlRegisterType: 只有 `MpvRenderItem`。
 
-ImageProvider: `image://imgcache/` → ImageCacheProvider → CacheStore。
+ImageProvider: `image://imgcache/<hash>/<base64url(路径)>` → ImageCacheProvider。
+**路径由主线程的 `CacheStore::providerUrl()` 解析好带进 URL，provider 不持有也不访问
+CacheStore** — `requestImageResponse()` 跑在 Qt 的 pixmap reader 线程 (2026-08 修，见下)。
 
 ## 播放启动链路 (user click → frame on screen)
 
@@ -163,7 +165,7 @@ DB Worker 线程: DBWorker::putItems(args...)
 - **读取**: 主线程查内存缓存 (无锁) → 命中返回; 未命中查主线程 SQLite 只读连接
 - **启动**: DB Worker 异步打开数据库, UI 在初始化完成前就显示
 - **WAL 模式**: CacheStore 初始化时设 `PRAGMA journal_mode=WAL`，防止主线程读 + DBWorker 写并发时产生 SQLITE_BUSY
-- `resolveImagePath()` 不再做 stat() — 信任 loadImageCache() 已验证的文件
+- `providerUrl()` 不做 stat() — 信任 loadImageCache() 已验证的文件
 
 ## I/O Pool 用法
 
@@ -183,7 +185,7 @@ ioPool().start([guard, ...]() {
 - `m_playGeneration` — 每次 play/stop 自增，回调里检查是否过期
 - `m_writeGeneration` — CacheStore 的延迟 SQL 写入用，clearAll() 时自增取消旧写入
 - 媒体缓存: 内存 HashMap + SQLite 双层，内存优先，过期数据留作 fallback。SQL 写入走 DB Worker
-- 图片加载: CachedImage → CacheStore::cachedImageUrl (内存缓存, 无 stat) → ImageLoadQueue (max 3 concurrent) → ImageCacheProvider
+- 图片加载: CachedImage → CacheStore::cachedImageUrl (内存缓存, 无 stat) → ImageLoadQueue (max 3 concurrent) → CacheStore::providerUrl (主线程解析路径) → ImageCacheProvider (reader 线程, 只解码)
 - RoundedImage: Stretch fill + roundedmask.frag shader 做 GPU 圆角, 不用 OpacityMask (无额外 FBO)
 - Icon: 23 个 MFIcon_* 全部常驻, visible 切换, 不用 Loader (避免切换延迟)
 - Flickable: 全部 `interactive: false`, 用 WheelHandler + NumberAnimation 模拟滚动 (统一手感)
@@ -263,8 +265,18 @@ cmake --build /root/myproject/mfplayer/build
     - 三个后端调 mpv_render_context_render 都必须传 BLOCK_FOR_TARGET_TIME=0——缺省 1 会睡到该帧目标显示时刻，UI 被锁到视频帧率（2026-07 Vulkan"UI 跟着视频走"根因）
   - PlayerControls: progressSlider.value 只在 `_lastSecond` 变化时更新。别移回每帧赋值
   - CacheStore: updateItemFieldInCache 找到 item 直接 `return`。别删外层 return
-  - resolveImagePath / fetchImage: 不做 `QFile::exists()`。别加回 stat
-  - m_imageCache / m_pendingDownloads: 主线程独占，无 mutex。别加回 m_imageCacheMutex
+  - providerUrl / fetchImage: 不做 `QFile::exists()`。别加回 stat
+  - m_imageCache / m_pendingDownloads: 主线程独占，无 mutex。别加回 m_imageCacheMutex。
+    **这条一度是假的** — ImageCacheProvider 曾在 reader 线程调 `resolveImagePath()` 读
+    m_imageCache，和主线程四类写入 (启动装载/过期删除/下载完成/clear) 是真数据竞争，启动
+    批量 insert 触发 rehash 撞上首屏请求就是 UB。2026-08 的修法不是加锁，是**把路径在主
+    线程解析好随 provider URL 带走**，让"主线程独占"重新成为事实。**别把路径解析挪回
+    provider 侧**，那等于把竞争原样装回去
+  - provider URL 用 base64url 编码路径，不是 percent-encoding。编码后只有 `A-Za-z0-9-_`，
+    不含 `/`，QUrl 不会二次变形 — Windows 盘符、空格、非 ASCII 路径全免疫。
+    编码必须留在 C++ 侧：JS 的 `btoa` 遇到非 ASCII 直接抛异常
+  - provider 收到路径后**硬卡在 `imageCacheDir()` 内**，越界当没路径 (透明图)。
+    带路径的 provider 等于把任意本地文件读取入口暴露给 QML，这道收口别放宽
   - ImageCacheResponse: m_image 无 mutex（时序保证：finished 前已赋值）。别加回 mutex
   - 图片缓存全链路 QImage（textureFactoryForImage 直接吃，隐式共享零拷贝）。
     别改回 QPixmap — 旧链路 QImage→QPixmap→toImage 每次请求多两次 ~1.5MB memcpy，缓存命中也逃不掉

@@ -49,7 +49,9 @@ public:
 private:
     friend class ImageCacheResponse;
     using CacheEntry = ImageCacheResponse::CacheEntry;
-    CacheStore *m_cache;
+    // 不持有 CacheStore —— reader 线程读它就是数据竞争。只在构造时 (主线程)
+    // 取一次缓存根目录, 用来卡住请求里带过来的路径
+    QString m_cacheRoot;
     mutable QMutex m_mutex;
     std::unordered_map<QString, CacheEntry> m_memCache;  // O(1) lookup
     std::list<QString> m_lru;                              // front = most recent, O(1) splice

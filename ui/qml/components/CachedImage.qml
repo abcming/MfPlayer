@@ -87,7 +87,9 @@ Image {
     }
 
     function _providerUrl(url) {
-        return "image://imgcache/" + Qt.md5(url)
+        // 路径由 C++ 侧解析并编码进 URL —— provider 跑在 reader 线程, 不能让它
+        // 回头读 m_imageCache。编码也必须留在 C++: JS 的 btoa 遇到非 ASCII 直接抛
+        return Server.cache.providerUrl(url)
     }
 
     function _startLoad() {
