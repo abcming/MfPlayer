@@ -686,22 +686,69 @@ HdrPqOverlay {
         }
     }
 
-    Button {
-        id: backBtn
-        width: 36; height: 36
+    // ── 左上角导航钮 ──
+    // 回主页: 相似推荐可以一层层点下去, 没这个就得一路 pop 回来
+    // 所属剧集: 从「继续观看」点进来落在**单集**详情页, 原本没有入口回到剧集本身
+    // (Row 会跳过 visible:false 的子项, 不占位)
+    Row {
+        id: navBtns
         anchors { left: parent.left; top: parent.top; margins: 12 }
-        flat: true
-        onClicked: Nav.pop()
+        spacing: 4
 
-        contentItem: Icon {
-            name: "arrow_back"
-            color: Theme.textSecondary
-            size: 24
+        Button {
+            id: backBtn
+            width: 36; height: 36
+            flat: true
+            onClicked: Nav.pop()
+
+            contentItem: Icon {
+                name: "arrow_back"
+                color: Theme.textSecondary
+                size: 24
+            }
+
+            background: Rectangle {
+                radius: 18
+                color: backBtn.hovered ? Qt.rgba(1,1,1,0.12) : "transparent"
+            }
         }
 
-        background: Rectangle {
-            radius: 18
-            color: backBtn.hovered ? Qt.rgba(1,1,1,0.12) : "transparent"
+        Button {
+            id: homeBtn
+            width: 36; height: 36
+            flat: true
+            onClicked: Nav.popToRoot()
+
+            contentItem: Icon {
+                name: "home"
+                color: Theme.textSecondary
+                size: 24
+            }
+
+            background: Rectangle {
+                radius: 18
+                color: homeBtn.hovered ? Qt.rgba(1,1,1,0.12) : "transparent"
+            }
+        }
+
+        Button {
+            id: seriesBtn
+            width: 36; height: 36
+            flat: true
+            visible: (detailRoot.itemData.Type || "") === Str.typeEpisode
+                     && (detailRoot.itemData.SeriesId || "") !== ""
+            onClicked: Nav.pushDetail(detailRoot.itemData.SeriesId)
+
+            contentItem: Icon {
+                name: "movie"
+                color: seriesBtn.hovered ? Theme.primary : Theme.textSecondary
+                size: 24
+            }
+
+            background: Rectangle {
+                radius: 18
+                color: seriesBtn.hovered ? Qt.rgba(1,1,1,0.12) : "transparent"
+            }
         }
     }
 
@@ -711,7 +758,7 @@ HdrPqOverlay {
     // sourceSize explicitly set so ImageProvider decodes at display size, not full resolution.
     CachedImage {
         id: itemLogo
-        anchors { left: backBtn.right; leftMargin: 8; verticalCenter: backBtn.verticalCenter }
+        anchors { left: navBtns.right; leftMargin: 8; verticalCenter: navBtns.verticalCenter }
         width: 300
         height: 30
         fillMode: Image.PreserveAspectFit
