@@ -128,6 +128,8 @@ private:
     void executeSearch(const QString &term);
     QString currentSortByString() const;
     QString buildFiltersString() const;
+    // 结果要进 m_contentModel 的分发一律走这里 (记下 cacheKey 当请求身份)
+    void dispatchFetch(const FetchParams &p);
 
     EmbyClient *m_emby;
     CacheStore *m_cache;
@@ -143,6 +145,9 @@ private:
     QHash<QString, MediaModel *> m_latestModels;
     int m_pendingLatestSections = 0;
     QString m_currentLibraryId;
+    // 最近一次 dispatchFetch() 的 cacheKey。onItemsFetched 靠它判断响应属不属于
+    // 当前视图 —— 比只比 parentId 严格，切 tab / 换排序 / 改筛选都会让它变
+    QString m_currentFetchKey;
     QHash<QString, QString> m_libraryTypes;
     int m_movieCount = 0;
     int m_seriesCount = 0;

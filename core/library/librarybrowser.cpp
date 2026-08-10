@@ -183,7 +183,7 @@ void LibraryBrowser::browseLibrary(const QString &libraryId) {
     QJsonArray cached = m_cache->getItems(p.cacheKey());
     if (!cached.isEmpty())
         m_contentModel->setItems(cached);
-    m_emby->fetchItemsFiltered(p);
+    dispatchFetch(p);
 }
 
 void LibraryBrowser::setLibraryTab(int tab) {
@@ -214,7 +214,7 @@ void LibraryBrowser::setLibraryTab(int tab) {
         QJsonArray cached = m_cache->getItems(p.cacheKey());
         if (!cached.isEmpty())
             m_contentModel->setItems(cached);
-        m_emby->fetchItemsFiltered(p);
+        dispatchFetch(p);
         break;
     }
     case TabSuggestions:
@@ -237,7 +237,7 @@ void LibraryBrowser::setLibraryTab(int tab) {
         m_paginationLimit = kPageSize;
         m_totalItems = -1;
         emit totalItemsChanged();
-        m_emby->fetchItemsFiltered({
+        dispatchFetch({
             .parentId = m_currentLibraryId,
             .includeTypes = Constants::kTypeEpisode,
             .filters = buildFiltersString(),
@@ -247,7 +247,7 @@ void LibraryBrowser::setLibraryTab(int tab) {
         });
         break;
     case TabFolders:
-        m_emby->fetchItemsFiltered({
+        dispatchFetch({
             .parentId = m_currentLibraryId,
             .filters = buildFiltersString(),
             .sortBy = currentSortByString(),
@@ -256,6 +256,14 @@ void LibraryBrowser::setLibraryTab(int tab) {
         });
         break;
     }
+}
+
+// 结果要进 m_contentModel 的分发一律走这里 —— 它把请求的 cacheKey 记成"当前期望",
+// onItemsFetched 拿它当请求身份比对。绕过这个函数直接调 m_emby->fetchItemsFiltered()
+// 就等于没有守卫, 响应会被无条件填进列表
+void LibraryBrowser::dispatchFetch(const FetchParams &p) {
+    m_currentFetchKey = p.cacheKey();
+    m_emby->fetchItemsFiltered(p);
 }
 
 void LibraryBrowser::loadMore() {
@@ -302,7 +310,7 @@ void LibraryBrowser::browseGenre(const QString &genreId, const QString &genreNam
     m_loadingMore = false;
     m_paginationLimit = 0;  // genre 结果全量返回, 不续拉
     emit browseContextChanged();
-    m_emby->fetchItemsFiltered({.parentId = m_currentLibraryId,
+    dispatchFetch({.parentId = m_currentLibraryId,
         .includeTypes = m_libraryTypes.value(m_currentLibraryId) == "movies" ? Constants::kTypeMovie : Constants::kTypeSeries,
         .filters = buildFiltersString(),
         .sortBy = currentSortByString(),
@@ -318,7 +326,7 @@ void LibraryBrowser::browseStudio(const QString &studioId, const QString &studio
     m_loadingMore = false;
     m_paginationLimit = 0;  // studio 结果全量返回, 不续拉
     emit browseContextChanged();
-    m_emby->fetchItemsFiltered({.parentId = m_currentLibraryId,
+    dispatchFetch({.parentId = m_currentLibraryId,
         .includeTypes = m_libraryTypes.value(m_currentLibraryId) == "movies" ? Constants::kTypeMovie : Constants::kTypeSeries,
         .filters = buildFiltersString(),
         .sortBy = currentSortByString(),
@@ -334,7 +342,7 @@ void LibraryBrowser::browsePerson(const QString &personId, const QString &person
     emit currentTabChanged();
     emit browseContextChanged();
     emit personBrowseStarted(personName);
-    m_emby->fetchItemsFiltered({.personIds = personId});
+    dispatchFetch({.personIds = personId});
 }
 
 void LibraryBrowser::fetchHome() {
@@ -501,7 +509,12 @@ void LibraryBrowser::onItemsFetched(const QJsonArray &items, const QString &pare
 
     // Favorites use direct callbacks (fetchFavorites) — no dispatch here
 
-    if (parentId != m_currentLibraryId) return;
+    // 请求身份 = cacheKey。它含 parentId / includeTypes / filters / sortBy /
+    // sortOrder / genreIds / studioIds / personIds —— 正好覆盖 setLibraryTab /
+    // setSortBy / setFilter / browseGenre / browseStudio 会改的每一个维度。
+    // 原来只比 parentId, 而那几个操作都不改 parentId, 守卫等于没有: 旧排序的
+    // 首屏回来照样 setItems, 后面还按新条件 loadMore, 列表变成旧首屏 + 新续页
+    if (cacheKey != m_currentFetchKey) return;
 
     // 续拉批次走 loadMore 的直接回调, 不经过这里 — 到达的只会是首屏/全量数据
     m_contentModel->setItems(items);
@@ -599,7 +612,7 @@ void LibraryBrowser::applySortAndFilter() {
     switch (m_currentTab) {
     case TabDefault:
         m_paginationLimit = kPageSize;
-        m_emby->fetchItemsFiltered({
+        dispatchFetch({
             .parentId = m_currentLibraryId,
             .includeTypes = m_libraryTypes.value(m_currentLibraryId) == "movies" ? Constants::kTypeMovie : Constants::kTypeSeries,
             .filters = buildFiltersString(),
@@ -612,7 +625,7 @@ void LibraryBrowser::applySortAndFilter() {
         m_paginationLimit = kPageSize;
         m_totalItems = -1;
         emit totalItemsChanged();
-        m_emby->fetchItemsFiltered({
+        dispatchFetch({
             .parentId = m_currentLibraryId,
             .includeTypes = Constants::kTypeEpisode,
             .filters = buildFiltersString(),
@@ -622,7 +635,7 @@ void LibraryBrowser::applySortAndFilter() {
         });
         break;
     case TabFolders:
-        m_emby->fetchItemsFiltered({
+        dispatchFetch({
             .parentId = m_currentLibraryId,
             .filters = buildFiltersString(),
             .sortBy = currentSortByString(),
