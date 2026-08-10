@@ -98,6 +98,9 @@ Item {
         playStartTimer.start()
         forceActiveFocus()
     }
+    // 同 DetailPage: pop 到销毁之间还有 350ms 过渡, 400ms 的 timer 会在这个窗口里
+    // 触发。不停掉就是**在用户已经退出的播放器上起播** —— 声音先出来, 画面没有
+    StackView.onDeactivating: playStartTimer.stop()
 
     // ── Overlay visibility ── (hover-driven, no timers)
 

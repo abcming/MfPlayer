@@ -84,6 +84,10 @@ HdrPqOverlay {
         onTriggered: if (itemId) Detail.browseItem(itemId)
     }
     Component.onCompleted: fetchTimer.start()
+    // pop 开始到组件真正销毁之间还有一整段过渡 (popExit 350ms), 400ms 的 timer
+    // 正好落在这个存活窗口里。不停掉就会给已经离开的页面拉数据, 污染共享的
+    // Detail 单例 —— 用户已经退回上一页, 却看到它的内容被换成刚才那一页的
+    StackView.onDeactivating: fetchTimer.stop()
 
     // When popped back to (waking up), refresh to pick up any playback progress.
     onVisibleChanged: {
