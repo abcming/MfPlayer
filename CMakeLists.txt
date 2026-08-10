@@ -115,9 +115,28 @@ else()
     set(SVGTOQML_PATH "${QT6_BIN_DIR}:$ENV{PATH}")
 endif()
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated_icons")
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/mfplayer")
 
 foreach(name ${ICON_NAMES})
     set(qml_out "${CMAKE_BINARY_DIR}/generated_icons/MFIcon_${name}.qml")
+    # Qt inspects QML module files while CMake is still configuring. Generate
+    # missing icons immediately for a clean build tree; the custom command
+    # below keeps them incremental after that.
+    if(NOT EXISTS "${qml_out}")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E env "PATH=${SVGTOQML_PATH}"
+                    "${SVGTOQML_BASH}" "${SVGTOQML_SCRIPT}"
+                    "${CMAKE_SOURCE_DIR}/resources/icons/${name}.svg"
+                    "${qml_out}"
+            RESULT_VARIABLE svgtoqml_result
+        )
+        if(NOT svgtoqml_result EQUAL 0)
+            message(FATAL_ERROR "svgtoqml failed for ${name}.svg")
+        endif()
+    endif()
+    file(COPY_FILE "${qml_out}"
+        "${CMAKE_BINARY_DIR}/mfplayer/MFIcon_${name}.qml"
+        ONLY_IF_DIFFERENT)
     add_custom_command(
         OUTPUT "${qml_out}"
         COMMAND ${CMAKE_COMMAND} -E env "PATH=${SVGTOQML_PATH}"
