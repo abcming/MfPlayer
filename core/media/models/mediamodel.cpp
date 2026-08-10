@@ -59,14 +59,25 @@ QHash<int, QByteArray> MediaModel::roleNames() const {
     };
 }
 
+// 全量 Id 的滚动哈希。只存一个标量, 不 pin 住整个 QJsonArray (大库要几 MB)。
+// 原来的指纹是 size + firstId, 会在一个再普通不过的场景下撞车: 库中部新增一部
+// 影片时, 分页首屏的条数不变、首个 Id 也不变 —— 于是网络首屏被当成"没变化"跳过,
+// 而 loadMore 又按服务器的新顺序续拉, 列表最后重复一项、缺一项
+static size_t fingerprintOf(const QJsonArray &items) {
+    size_t h = static_cast<size_t>(items.size());
+    for (const auto &v : items) {
+        size_t k = qHash(v.toObject().value("Id").toString());
+        h ^= k + 0x9e3779b9 + (h << 6) + (h >> 2);
+    }
+    return h;
+}
+
 void MediaModel::setItems(const QJsonArray &items) {
-    QString firstId = items.isEmpty()
-        ? QString() : items.first().toObject().value("Id").toString();
-    if (items.size() == m_lastSourceSize
-        && (items.isEmpty() || firstId == m_lastSourceFirstId))
+    size_t fp = fingerprintOf(items);
+    if (m_fingerprintValid && fp == m_lastSourceFingerprint)
         return;
-    m_lastSourceSize = items.size();
-    m_lastSourceFirstId = firstId;
+    m_lastSourceFingerprint = fp;
+    m_fingerprintValid = true;
     beginResetModel();
     m_items.clear();
     m_idToIndex.clear();
@@ -128,8 +139,9 @@ void MediaModel::clear() {
     m_items.clear();
     m_idToIndex.clear();
     m_alphaIndex.clear();
-    m_lastSourceSize = 0;
-    m_lastSourceFirstId.clear();
+    // 清空后必须失效指纹, 否则再 setItems() 同一批数据会被当成"没变化"跳过,
+    // 列表就空在那儿了
+    m_fingerprintValid = false;
     endResetModel();
     emit alphaIndexChanged();
 }
@@ -295,8 +307,7 @@ bool MediaModel::removeItem(const QString &itemId) {
     }
     endRemoveRows();
     // Invalidate the dedup fingerprint: a later setItems() with the original
-    // source array (same size + firstId) must not be skipped.
-    m_lastSourceSize = -1;
-    m_lastSourceFirstId.clear();
+    // source array must not be skipped.
+    m_fingerprintValid = false;
     return true;
 }

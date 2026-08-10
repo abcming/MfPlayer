@@ -65,10 +65,12 @@ private:
     };
     QList<Item> m_items;
     QHash<QString, int> m_idToIndex;  // O(1) lookup by itemId
-    // Dedup fingerprint of the last setItems() source — size + first Id is
-    // enough; keeping the whole QJsonArray pinned MBs for large libraries.
-    int m_lastSourceSize = 0;
-    QString m_lastSourceFirstId;
+    // Dedup fingerprint of the last setItems() source — 全量 Id 的滚动哈希,
+    // 只占一个标量, 不 pin 住整个 QJsonArray (大库要几 MB)。
+    // 去重是为了首屏缓存预显示不闪烁, 别去掉; 但指纹必须覆盖全部内容,
+    // 只看 size + firstId 会漏掉"中部增删"(见 .cpp 说明)
+    size_t m_lastSourceFingerprint = 0;
+    bool m_fingerprintValid = false;
     QVariantMap m_alphaIndex;          // incrementally maintained A-Z→row map
 
     void rebuildAlphaIndex();
