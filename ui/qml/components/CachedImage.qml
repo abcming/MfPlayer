@@ -64,8 +64,12 @@ Image {
             // (HTTP download) paths to prevent a download storm during
             // fast scroll. Without this check, every delegate shows blank
             // for 80ms on every scroll pass, even for cached images.
-            if (Server.cache.cachedImageUrl(url)) {
-                source = _providerUrl(url)
+            // 一次调用同时当命中判据和结果用: providerUrl() 未命中返回空。
+            // 别拆回 cachedImageUrl() + _providerUrl() 两次 —— 快速滚动时每个
+            // delegate 都走这条, 两次 Q_INVOKABLE 反射 + 两次 MD5 会卡住主线程
+            let pu = _providerUrl(url)
+            if (pu) {
+                source = pu
                 _busy = false
                 return
             }
@@ -95,10 +99,11 @@ Image {
     function _startLoad() {
         let url = embyUrl
         if (!url) return
-        let cached = Server.cache.cachedImageUrl(url)
-        if (cached) {
+        // 同上 —— 一次调用兼作命中判据, 不要拆成两次
+        let pu = _providerUrl(url)
+        if (pu) {
             // Cache hit — use provider URL so sourceSize is respected
-            source = _providerUrl(url)
+            source = pu
             _busy = false
             return
         }
