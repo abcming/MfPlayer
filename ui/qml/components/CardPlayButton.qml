@@ -24,7 +24,7 @@ Rectangle {
         anchors.centerIn: parent
         name: "play_arrow"
         color: Theme.textPrimary
-        size: 22
+        size: 30
     }
 
     MouseArea {

@@ -243,12 +243,12 @@ Rectangle {
 
                 contentItem: Icon {
                     name: "skip_previous"
-                    color: parent.hovered ? Theme.primary : Theme.textTertiary
+                    color: Theme.textPrimary
                     size: 22
                 }
 
                 background: Rectangle {
-                    color: parent.hovered ? Theme.activeHover : "transparent"
+                    color: parent.hovered ? Theme.active : "transparent"
                     radius: 4
                 }
             }
@@ -284,12 +284,12 @@ Rectangle {
 
                 contentItem: Icon {
                     name: "skip_next"
-                    color: parent.hovered ? Theme.primary : Theme.textTertiary
+                    color: Theme.textPrimary
                     size: 22
                 }
 
                 background: Rectangle {
-                    color: parent.hovered ? Theme.activeHover : "transparent"
+                    color: parent.hovered ? Theme.active : "transparent"
                     radius: 4
                 }
             }

@@ -257,6 +257,12 @@ cmake --build /root/myproject/mfplayer/build
   全部静默失效**，长文本直接溢出压到隔壁。
   症状是"设了省略号却不省略"。判据: Layout 无 `width`/`anchors` **且**内部有 `fillWidth`。
   （父本身是 Layout 时不用管，用 `Layout.fillWidth` 就行。）
+- **SVG 图标里「并排互不相连」的形状必须各写一个 `<path>`** → 挤在一个 `d` 里靠 `M`
+  分子路径, svgtoqml 会合成**单个 `ShapePath`**, CurveRenderer 在 GPU 上可能只画其中一块
+  (2026-08 `pause` 双竖条实机只出一根的根因; `skip_next`/`skip_previous` 同结构侥幸没炸,
+  一并拆了)。**注意别一律拆**: `heart`/`home`/`movie`/`subtitles` 等 14 个图标的多子路径是
+  **嵌套挖空**用的, 靠 `fillRule: WindingFill` 把内圈掏掉, 拆成多个 `<path>` 挖空就没了。
+  判据: 子路径之间**互不嵌套**才拆。
 - **文件名类文本用 `Text.Wrap` 不用 `Text.WordWrap`** → 剧集名常常是整串文件名
   (`xxx.2026.S01E02.2160p.WEB-DL.H265`)，里面没空格，WordWrap 找不到断点就一行到底
 - **性能红线 — 不要回退以下优化**:

@@ -57,7 +57,7 @@ ColumnLayout {
                 Icon {
                     name: "play_arrow"
                     color: Theme.textPrimary
-                    size: 20
+                    size: 24
                 }
                 Label {
                     text: playBtn.resumable ? Str.detailResume : Str.detailPlay

@@ -1,1 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path fill="white" d="M220-240v-480h80v480h-80Zm520 0L380-480l360-240v480Zm-80-240Zm0 90v-180l-136 90 136 90Z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24">
+  <path fill="white" d="M220 -680A40 40 0 0 1 300 -680V-280A40 40 0 0 1 220 -280Z"/>
+  <path fill="white" d="M740 -607.9L740 -352.1A60 60 0 0 1 646.7 -302.2L454.9 -430.1A60 60 0 0 1 454.9 -529.9L646.7 -657.8A60 60 0 0 1 740 -607.9Z"/>
+</svg>
