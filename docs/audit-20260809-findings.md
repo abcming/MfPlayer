@@ -1,7 +1,9 @@
 # MfPlayer 全仓库审计 — 2026-08-09
 
 四单只读审计（codex / blueprint 流程），分区互不重叠，每单自行选取维度。
-共 **26 条** finding。**已核实 13 条（其中 A-1、C-1、D-3、E-2 已修），剩 13 条待核实**（2026-08-10）。
+共 **26 条** finding。**26 条全部核实完毕**（2026-08-10）——
+25 条成立、**1 条驳回**（D-7，描述的故障真实但整条路径没有调用方，是死代码不是 bug）。
+其中 A-1 / C-1 / D-3 / E-2 已修。
 
 ## 怎么用这个文档
 
@@ -29,7 +31,7 @@
 >
 > 行号本身是准的，只是目录层级不全。后面核实剩下几条时先 `find` 一下再读。
 
-## 已核实（10 条）
+## 首批核实（2026-08-10 上午）
 
 ### A-1 · ImageProvider 在 reader 线程无保护读取 `m_imageCache`
 - **状态**：`已修` — 2026-08-10，`b5a599d`
@@ -256,7 +258,7 @@ t=710   销毁
 ---
 
 ## C-1 · `clearImageCache()` 清不干净，残留下载会把缓存写回来
-- **状态**：`已修` — 2026-08-10，`741ddc9`
+- **状态**：`已修` — 2026-08-10，`741ddc9`（编译 + 封铭实机验证通过）
 - **修法**：不逐个取消，在整条异步链唯一的汇合点（IO 池写完回主线程那步）设一道闸 ——
   `doFetchImage()` 带上发起时的 `m_writeGeneration`，重试链一路传递，写回前比对；
   过期就 `QFile::remove(savePath)` 免得留孤儿文件。外加 `m_downloadQueue.clear()`。
@@ -363,69 +365,352 @@ else { grid.contentY = 0; Detail.browseItem(itemId) }   // ← Folder 落这里
 
 ---
 
-## 未核实 · 单 1 · playback + mpv（2 条）
+## 第二批核实（2026-08-10）· 单 1 · playback + mpv
 
-| # | 位置 | 摘要 | 老王定级 |
-|---|---|---|---|
-| B-1 | `mpvcontroller.cpp:434`、`:347`、`.h:120` | 异步 volume/speed 写入拿"旧确认值"去重，会吞掉最终请求；`m_volume` 初值 80 与 libmpv 默认 100 不符，启动时 `setVolume(80)` 被判定为无需设置，随后被观察事件改成 100 并持久化 | 低 |
-| B-2 | `playbackcontroller.cpp:276`、`:164`、`:257` | 只含 MediaSources 的临时对象被当成完整详情写回缓存：顶层缺 `RunTimeTicks` → `PlayedPercentage` 恒为 0、`Played` 恒 false，并提交缺 Id/Name 的详情对象 | 低 |
-| B-3 | `playbackcontroller.cpp:58`、`:501`、`mpvcontroller.cpp:474` | 外挂字幕用 `sub-add` 异步排队后，同一同步槽内立刻 `fuzzySelectSubtitle()`，此时 track-list 还没有这些轨道；`tracksChanged` 也不会重新触发选择 | 低 |
+### B-1 · 音量去重拿"旧确认值"比，且初值与 libmpv 默认不符
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：**低偏中**
+- **位置**：`platform/rendering/mpv/mpvcontroller.cpp:434`、`:527`、`.h:120`、
+  `core/playback/playbackcontroller.cpp:19`、`:25`
 
-> 单 1 备注：D3D11 渲染路径、Vulkan 图像所有权/销毁顺序、锁序与控制器 teardown 已读，无额外 finding。
+```cpp
+void MpvController::setVolume(int vol) {
+  if (!m_mpv || vol == m_volume) return;   // ← m_volume 是"上次观察事件的值"
+  ...
+}
+int m_volume = 80;                          // .h:120，libmpv 默认是 100
+```
 
-## 未核实 · 单 2 · cache + network（3 条）
+`m_volume` 唯一的写入点是 `:527`（mpv 属性观察事件），**不是"上次请求值"**。两个后果：
 
-> C-1 已于 2026-08-10 核实，移到上面。
+**① 启动时吞掉恢复值（每次都发生，只要设置里存的是 80）**
 
-| # | 位置 | 摘要 | 老王定级 |
-|---|---|---|---|
-| C-2 | `dbworker.cpp:36` | `stop()` 设 flag + `quit()`，并不排空事件队列（与头文件注释声称的 "drains the event queue" 相反）；退出前最后一批 `putItems()` 丢失 | 低 |
-| C-3 | `dbworker.cpp:115` | `putSeasons()` 事务内只做 `INSERT OR REPLACE`，不先删该 `series_id` 旧行 → DB 存的是历次季列表的并集；季被删除后幽灵季会残留到 TTL 过期 | 低 |
-| C-4 | `cachestore.cpp:590` | `QFile::write()` 返回值未检查，`writeOk` 只看 `rename()`。短写/写失败后 rename 仍成功 → 截断文件被登记为有效缓存，且因 `m_imageCache` 已命中不会重新下载 | 低 |
+```
+m_volume = 80                                    ← C++ 初值
+setVolume(m_settings->volume())  // 恰好 80      → 80 == 80，直接 return
+libmpv 保持默认 100
+观察事件回来 → m_volume = 100
+playbackcontroller.cpp:25 → m_settings->setVolume(100)   ← 用户的 80 被覆盖写死
+```
 
-> 单 2 备注：CurlEngine 完整读过（easy handle / slist / Task / 取消路径 / 回调销毁引擎），无达到门槛的问题。
+用户设 80、退出、重启 → **音量自己跳到 100 并被持久化**。深夜戴耳机时这一下不好受。
+（`m_speed` 初值 1.0 与 libmpv 默认一致，没有这一支。）
 
-## 未核实 · 单 3 · library / detail / server / settings / media / providers（4 条）
+**② 拖动滑块时吞掉最终请求**
 
-> D-1 ~ D-5 已于 2026-08-10 核实，移到上面。
+`PlayerControls.qml:48` 的 `onMoved` 触发频率很高：
 
-| # | 位置 | 摘要 | 老王定级 |
-|---|---|---|---|
-| D-6 | `librarybrowser.cpp:73`、`:408`、`:420` | 搜索防抖只停未触发的 timer，不失效已发出的请求；输入缩短后旧结果回填空白搜索页。人物响应仅靠布尔值路由，连续搜索会互相吞掉 | 低 |
-| D-7 | `librarybrowser.cpp:329`、`embyclient.cpp:646`、`:504` | `browsePerson()` 的 `FetchParams` 不设 `parentId`，回来必然被 `parentId != m_currentLibraryId` 丢弃 → 人物浏览点了没反应（**注：老王看不到 QML，已自行降级；需结合单 4 一起判**） | 低 |
-| D-8 | `credentialstore.cpp:35`、`servermanager.cpp:49` | `addServer()` 命中已有 URL+用户名时只更新凭证，不设 active 也不取消原 active；重新登录已保存的非活动服务器后，重启会恢复到错误的服务器 | 低 |
-| D-9 | `settingsstore.cpp:28`、`:119`、`.h:38` | HDR 亮度/SDR 白点/seek 步长/窗口尺寸走 200ms 防抖，析构时不提交待写值 → 调整后 200ms 内 Alt+F4 丢失设置 | 低 |
+```
+拖到 50 → 发请求；观察事件回来 m_volume = 50
+拖到 60 → 发请求；事件还没回，m_volume 仍是 50
+拖回 50 → 50 == m_volume(50) → 吞掉
+60 的事件回来 → m_volume = 60，UI 显示 60，用户手停在 50
+```
 
-> 单 3 备注：`updateCardField()` 的传播覆盖完整；similar/person/nextUp 的响应 ID 守卫有效；`MediaModel::removeItem()` 正确失效指纹并重建索引。
+### B-2 · 只含 MediaSources 的残缺对象被当完整详情写回缓存
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：**中偏高**
+- **位置**：`core/playback/playbackcontroller.cpp:139`、`:164`、`:276-286`、`core/cache/cachestore.cpp:229`
 
-## 未核实 · 单 4 · ui/qml（3 条）
+```cpp
+m_currentItemDetail = m_cache->getItemDetail(itemId);   // :139 详情未预缓存 → {}
+...
+m_currentItemDetail["MediaSources"] = mediaSources;     // :164 变成"只有 MediaSources"
+```
 
-> E-1 ~ E-4 已于 2026-08-10 核实，移到上面。
+这个残缺状态**代码自己知道**——`:79-80` 的注释白纸黑字写着
+「详情未预缓存时 `m_currentItemDetail` 只有回填的 MediaSources, 没有 Id 字段」，
+并在字幕那条路上绕开了它。但 `updateCachedProgress()` 没绕：
 
-| # | 位置 | 摘要 | 老王定级 |
-|---|---|---|---|
-| E-5 | `BrowsePage.qml:1284`、`:1326` | UNC URL `file://NAS/share/x.mkv` 正则去掉 `file://` 后变成相对路径 `NAS/share/x.mkv`，丢掉 UNC 根前缀 → 从 `\\NAS\Videos` 播放/拖入失败 | 低 |
-| E-6 | `PlayControlsRow.qml:190`、`:227` | 「下一集」进度的分子取 `nextEpisode.PlaybackPositionTicks`，分母却取 Series 的 `RunTimeTicks` → 空进度条或荒谬的剩余时间 | 低 |
-| E-7 | `Main.qml:355`、`:395` | 登录失败的 `errorLabel` 只在下次点"连接"时隐藏，Dialog 的 `onOpened`/`onClosed` 都不重置 → 关掉再打开仍显示上一次的认证错误 | 低 |
+```cpp
+QJsonObject cached = m_currentItemDetail;                 // 非空（有 MediaSources）
+if (cached.isEmpty()) cached = m_cache->getItemDetail(itemId);   // ← 走不到
+double totalTicks = cached["RunTimeTicks"].toDouble();    // 缺字段 → 0
+ud["PlayedPercentage"] = 0;  ud["Played"] = false;        // 恒定
+m_cache->putItemDetail(itemId, cached);                   // ← 写回
+```
 
-> 单 4 备注：HDR 启动遮罩与 PQ overlay、CachedImage/ImageLoadQueue 的取消与并发槽归还、`reuseItems` delegate 的 required roles、主进度滑块的除零守卫与节流、TrackSelector、SettingsDialog、单例与 shader 数值路径已读，无其他发现。
+`putItemDetail()` 是**整体覆盖**（`m_detailCache[itemId] = detail` + DBWorker 存整串 JSON），
+不是合并。所以这一下把内存和 SQLite 里可能存在的完整详情，换成一个没有
+Id / Name / RunTimeTicks 的壳。
+
+触发路径是**从剧集页直接点某一集播放**——代码注释里举的正是这个例子
+（"episodes played from a series page"）。这不是边角情况，是日常操作。
+
+### B-3 · 外挂字幕 `sub-add` 还在排队，就去 track-list 里模糊匹配
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：低
+- **位置**：`core/playback/playbackcontroller.cpp:58`、`:93`、`:501`、`platform/rendering/mpv/mpvcontroller.cpp:493`
+
+`fileLoaded` 的槽里先循环 `addSubtitleFile()` 把所有外挂字幕加进去，
+而 `addSubtitleFile()` 结尾是 **`mpv_command_async`**（`:493`）——命令只是排进队列。
+同一个槽紧接着就调 `fuzzySelectSubtitle()`（`:93`），它读的是 `m_mpv->tracks()`，
+**此刻那些外挂轨道还没出现在 track-list 里**。
+
+`tracksChanged` 只是被转发给 QML（`:52`），不会重新触发选择。
+所以设了偏好字幕语言的用户，模糊匹配只能在内嵌轨道里挑，外挂字幕永远轮不上。
+
+---
+
+## 第二批核实（2026-08-10）· 单 2 · cache + network
+
+### C-2 · `stop()` 不排空队列 —— 而且是主动丢弃
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：低
+- **位置**：`core/cache/dbworker.cpp:37`、`.h:26-27`
+
+头文件注释声称 stop 会 "drains the event queue"，实现是：
+
+```cpp
+void DBWorker::stop() {
+    m_stopFlag = true;
+    m_thread.quit();          // 处理完当前事件就退，不排空
+    ...
+}
+```
+
+比"不排空"更进一步：每个 slot 开头都是 `if (m_stopFlag) return;`，
+所以队列里剩下的事件**即使被处理也会被主动丢弃**。注释是假的。
+
+后果只是退出前最后一批写入没落盘，下次启动重新从网络拉。数据不会错。**低**。
+
+### C-3 · `putSeasons()` 不删旧行，DB 里存的是历次季列表的并集
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：低
+- **位置**：`core/cache/dbworker.cpp:111`、`core/cache/cachestore.cpp:93-96`
+
+表结构是 `PRIMARY KEY (series_id, season_id)`（`cachestore.cpp:96`），
+`putSeasons()` 事务里只有 `INSERT OR REPLACE`，**没有
+`DELETE FROM seasons WHERE series_id = ?`**。
+
+服务器上删掉第 3 季 → 新数据只含第 1、2 季 → 第 3 季那行原地不动 →
+`getSeasons()` 读出来是并集，UI 上多一个点进去空空如也的幽灵季。
+
+幽灵行的 `fetched_at` 不会被刷新，所以 3 天 TTL（`kCacheExpirySeconds`，
+`dbworker.cpp:252`）到期会自己消失。**上限 3 天，能自愈**，所以是低。
+
+> `episodes` 表把整季存成一行 JSON（同样的复合主键 + `data` 字段），
+> 整体替换，没有这个问题。只有 `seasons` 是逐行存的。
+
+### C-4 · `QFile::write()` 返回值不查，截断文件会被登记为有效缓存
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：低
+- **位置**：`core/cache/cachestore.cpp:583-590`
+
+```cpp
+QFile f(tmpPath);
+if (f.open(QIODevice::WriteOnly)) {
+    f.write(*dataPtr);              // ← 返回值丢弃
+    f.close();                      // ← 返回值丢弃（flush 失败在这里体现）
+    QFile::remove(savePath);
+    writeOk = QFile::rename(tmpPath, savePath);   // writeOk 只反映 rename
+}
+```
+
+前面的 `QImageReader::canRead()` 校验的是**内存里的 dataPtr**，不是落盘后的文件，
+所以拦不住短写。磁盘满 / IO 错误 → 文件截断 → rename 照样成功 → `writeOk = true`
+→ `putImagePath()` 登记为有效缓存 → 显示半张图，且因 `providerUrl()` 命中不会重下。
+
+触发要磁盘满或 IO 故障，**低**。但和 C-1 的幽灵条目是同一类："缓存表说有，实际不可用"。
+
+---
+
+## 第二批核实（2026-08-10）· 单 3 · library / server / settings
+
+### D-6 · 搜索防抖只停 timer 不失效请求；人物结果还会串台
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：**中**
+- **位置**：`core/library/librarybrowser.cpp:408`、`:420-431`、`:73-80`
+
+**① 旧结果回填空白搜索页**
+
+```cpp
+void LibraryBrowser::search(const QString &term) {
+    if (term.length() < 2) {
+        m_searchDebounceTimer->stop();   // 只停还没触发的
+        m_searchMoviesModel->clear();
+        ...
+```
+
+`executeSearch()` 发出的 `searchItems()` 是回调式、**无 generation 守卫**。
+输入"钢铁侠"→ 请求发出 → 用户删到"钢"→ 停 timer + 清空模型 → 旧请求回来
+`setItems()` 照填。搜索框空着，结果列表却有内容。
+
+**② 人物结果串台 —— 比原报告严重**
+
+`m_fetchingFavPersons` / `m_fetchingSearchPersons` 是两个**布尔**，共用同一个
+`personsFetched` 信号：
+
+```cpp
+if (m_fetchingFavPersons)        { m_fetchingFavPersons = false;   m_favPeopleModel->setItems(items); }
+else if (m_fetchingSearchPersons){ m_fetchingSearchPersons = false; m_searchPeopleModel->setItems(items); }
+```
+
+收藏页和搜索同时在飞时，**先回来的那个响应会被判给 fav 分支** ——
+搜索出来的人物被填进"收藏的人物"列表。连续两次搜索则是后一次的结果被整个丢弃
+（两个布尔都已置 false，两个分支都不成立）。
+
+### D-7 · `browsePerson()` 整条路径没有调用方 —— **驳回**
+- **状态**：`驳回` · **老王定级**：低 · **核实后**：**不是 bug，是死代码**
+- **位置**：`core/library/librarybrowser.cpp:329`、`.h:124`
+
+原报告说「人物浏览点了没反应」。代码层面的事实成立：
+`browsePerson()` 的 `FetchParams` 只设 `personIds`、不设 `parentId`，
+走无回调版 `fetchItemsFiltered()`（`embyclient.cpp:619`），
+末尾 `emit itemsFetched(items, p.parentId /* 空 */, ...)`，
+必然被 `onItemsFetched()` 的 `if (parentId != m_currentLibraryId) return;` 丢弃。
+
+**但用户撞不上这个故障 —— 全仓库没有任何地方调用 `browsePerson()`。**
+
+```
+grep -rn 'browsePerson' --include=*.qml .      → 0 条
+grep -rn 'personBrowseStarted' ...             → 只有声明和 emit，0 个 connect
+```
+
+实际的人物浏览走的是另一条路：`LibraryGridView` 的兜底分支 → `Detail.browseItem()`
+→ `DetailManager` 里的 `kTypePerson` 分支 → `fetchPersonFilms()`。那条路是通的。
+
+所以 `browsePerson()` + `personBrowseStarted` 是**被替换后没删的旧路径**。
+按 bug 处理是错的定性；要处理就当死代码删，和 `cachedImageUrl()` 一个性质。
+
+### D-8 · 重登已保存的服务器不改 `is_active`，重启会回到旧服务器
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：**中**
+- **位置**：`core/server/credentialstore.cpp:35-46`、`:67`、`core/server/servermanager.cpp:132`
+
+`addServer()` 命中已有 URL+用户名时，只 UPDATE 凭证和 `last_used`：
+
+```cpp
+u.prepare("UPDATE servers SET password = ?, token = ?, user_id = ?, "
+          "last_used = datetime('now') WHERE id = ?");   // ← 不设 is_active
+```
+
+新建分支才有 `UPDATE servers SET is_active = 0` + `INSERT ... is_active 1`。
+
+**关键在于恢复走哪个字段**：`restoreSession()`（`servermanager.cpp:132`）
+第一步是 `m_creds->getActiveServer()`，读的是 **`is_active`**，
+不是 `getServers()` 那条 `ORDER BY last_used DESC`。
+
+所以：A 是 active → 用户登录已保存的 B → B 只更新了凭证和 last_used →
+重启 → `getActiveServer()` 仍返回 **A**。用户明确切过服务器，重启却回到旧的。
+
+### D-9 · 防抖设置在析构时不提交
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：低
+- **位置**：`core/settings/settingsstore.cpp:29-40`、`:119`、`core/settings/settingsstore.h`
+
+HDR 亮度 / SDR 白点等走 200ms `singleShot` timer，值先存在成员变量里，
+timer 触发才 `m_settings.setValue()`。**`SettingsStore` 没有自定义析构函数**
+（`grep '~SettingsStore'` 无结果），所以待写值根本没进过 QSettings，
+QSettings 自己的 sync 也救不了。
+
+调完 HDR 亮度 200ms 内 Alt+F4 → 这次调整丢失。窗口很窄，**低**。
+
+---
+
+## 第二批核实（2026-08-10）· 单 4 · ui/qml
+
+### E-5 · UNC 路径被正则吃掉根前缀
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：低
+- **位置**：`ui/qml/pages/BrowsePage.qml:1284`、`:1326`
+
+```qml
+var path = selectedFile.toString().replace(/^file:\/{2,3}/, "")
+```
+
+UNC 共享的 URL 形式是 `file://NAS/share/x.mkv` —— `//NAS` 是 **authority**，不是路径。
+正则把 `file://` 整个吃掉后剩下 `NAS/share/x.mkv`，UNC 根前缀 `\\` 没了，
+变成一个相对路径。从 `\\NAS\Videos` 选片或拖入都会失败。
+
+本地盘路径（`file:///C:/...`，三斜杠）不受影响 —— 正则的 `{2,3}` 正好吃掉三个。
+两处（文件对话框、拖放）都是同一行代码。
+
+### E-6 · 「下一集」进度条分子分母不是同一个东西
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：低
+- **位置**：`ui/qml/components/PlayControlsRow.qml:190-192`、`:229-230`
+
+```qml
+property double pct: ne && root.itemData.RunTimeTicks > 0
+    ? Math.min((ne.PlaybackPositionTicks || 0) / root.itemData.RunTimeTicks * 100, 100)
+    : 0
+```
+
+分子是**下一集的**播放位置，分母是 `root.itemData` 的时长 —— 而「下一集」只在
+**剧集（Series）详情页**出现，`itemData` 就是 Series。
+
+Emby 对 Series 通常不返回 `RunTimeTicks` → `> 0` 为假 → `pct` 恒 0 → 空进度条。
+若某些配置返回了总时长，得到的是"单集进度 ÷ 全剧总长"，一个荒谬的小比例。
+`:229-230` 的剩余时间标签用同一对数值，同样错。
+
+### E-7 · 登录错误只在下次点"连接"时才消失
+- **状态**：`已核实` · **老王定级**：低 · **核实后**：低
+- **位置**：`ui/qml/pages/Main.qml:355`、`:387`、`:399-400`
+
+`errorLabel` 全文件只有 4 处引用：声明（`:355`，`visible: false`）、
+连接按钮的 `onClicked` 里 `visible = false`（`:387`）、
+`onPlayError` 里置文本并 `visible = true`（`:399-400`）。
+
+Dialog 没有 `onOpened` / `onClosed` 重置。所以认证失败后关掉登录框、
+过一会儿再打开，上一次的红字还在那儿。
 
 ---
 
 ## 建议的下一步顺序
 
-1. ~~**A-1**~~ — 已修 (`b5a599d`)。
-2. **E-2** — 一行的事（`switchEpisode` 的 Emby 分支补 `itemData = null`），收益却是"版本菜单不再指向错误的媒体源"。性价比最高，先修这个。
-3. **D-3** — 修法明确：`if (!r.ok()) return;`。但要连带决定 `networkError` 接不接（现在是死信号）。
-4. **D-2** — 污染写进 SQLite 且会自我放大一次，四条 D 里危害最实。
-5. **D-1 / D-4** — 与 D-2 同形状：**异步响应不带请求身份**。三条一个修法：把请求身份放进响应，回调里比对。D-4 最省事（`onItemsFetched` 加 generation 参数）。
-6. **E-1 / E-3** — 同形状：**QML 侧不校验数据/事件属于当前页**。E-1 是把守卫从"验自己内部一致"改成"验事件归属"；E-3 是退场时 stop timer 或加 `StackView.status` 检查。
-7. **A-2** — 修法要和 `m_fileLoaded` 的改动放一起想（同属播放结算链）。
-8. **A-3** — 实锤但只影响 OpenGL 后端，Windows 主路径碰不到，可以缓。
-9. ~~**C-1**~~ — 已修 (`741ddc9`)。
-10. **D-5** — 一行指纹换成"条数 + 首尾 Id"或直接去掉去重（去重是为了防闪烁，别一刀切）。改之前先想清楚它保护的是什么。
-11. **E-4** — 不是补个 `if` 的事，先定产品：接目录下钻，还是摘掉「文件夹」Tab。放最后。
-12. 其余 13 条未核实的，**核实之前一律不许开修**。
+**已修 4 条**：A-1 (`b5a599d`)、C-1 (`741ddc9`)、D-3 (`07341b9`)、E-2 (`bed29d3`)。
+**驳回 1 条**：D-7（当死代码处理，不当 bug 修）。
+剩 21 条按下面的顺序走 —— 排序依据是「危害 × 用户撞上的频率 ÷ 修复成本」，不是定级高低。
+
+### 第一梯队 · 高频且实伤
+
+1. **B-2** — 中偏高。触发路径是"从剧集页直接点某集播放"这种日常操作，
+   而后果是残缺对象**整体覆盖**详情缓存（内存 + SQLite）。
+   修法两选一：`updateCachedProgress()` 判一下 `cached` 是否含 `Id`/`RunTimeTicks`，
+   或者根本不要往 `m_currentItemDetail` 里塞半截对象（`:164` 单独存 MediaSources）。
+   **后者更治本** —— 那个残缺状态目前是靠"每个用到的地方各自绕开"维持的，
+   已经绕漏了一处，还会有下一处。
+
+2. **D-2 / D-1 / D-4** — 同一个形状：**异步响应不带请求身份**。三条一个修法
+   （把请求身份放进响应，回调里比对）。D-2 危害最实（污染写进 SQLite 且会自我放大一次），
+   D-4 最省事。三条一起改比分三次省。
+
+3. **E-1 / E-3** — 同一个形状：**QML 侧不校验数据/事件属于当前页**。
+   E-1 把守卫从"验自己内部一致"改成"验事件归属"；E-3 退场时 stop timer 或查 `StackView.status`。
+
+### 第二梯队 · 单点，各自独立
+
+4. **D-6** — 人物结果串台那一支优先（搜索结果填进"收藏的人物"）。
+   两个布尔换成请求 id / generation。搜索请求本身也该带上守卫。
+5. **D-8** — `addServer()` 命中已有记录的分支补上 `is_active` 的置位与互斥。改动很小。
+6. **B-1** — 去重改成比"上次**请求**值"而非"上次**确认**值"，
+   并把 `m_volume` 初值对齐 libmpv 默认（100），或者干脆用哨兵值 -1 表示"还没同步过"。
+7. **D-5** — 指纹换成"条数 + 首尾 Id"或加一个内容摘要。
+   **改之前先想清楚它保护的是什么** —— 它是为了首屏缓存预显示不闪烁，不能一刀切掉。
+8. **A-2** — 修法要和 `m_fileLoaded` 的改动放一起想（同属播放结算链）。
+
+### 第三梯队 · 一行党，建议打包成一次「小修集」
+
+9. **E-7** — Dialog 的 `onOpened` 里 `errorLabel.visible = false`。1 行。
+10. **C-3** — `putSeasons()` 事务开头加 `DELETE FROM seasons WHERE series_id = ?`。2 行。
+11. **C-4** — 检查 `f.write()` 返回值是否等于数据长度，以及 `f.close()` 的返回值。2 行。
+12. **D-9** — 给 `SettingsStore` 加析构，把还在等的 timer 立即触发一次。几行。
+13. **E-6** — 分母换成 `ne.RunTimeTicks`。1 行。
+14. **E-5** — UNC 前缀还原：`file://host/...` 要还原成 `\\host\...`。
+    注意别把 `file:///C:/...` 一起改坏了。
+
+### 缓办
+
+15. **B-3** — 外挂字幕的模糊匹配要等 track-list 真的更新。
+    改法是把 `fuzzySelectSubtitle()` 挂到 `tracksChanged` 上并加"只做一次"的守卫，
+    比看上去麻烦，收益也只是外挂字幕的自动选中。
+16. **E-4** — 先定产品：接目录下钻（要 LibraryBrowser 支持 parentId 下钻 + 返回栈），
+    还是把「文件夹」Tab 摘掉。**不是补个 `if` 的事**，别当小修做。
+17. **C-2** — 退出前丢最后一批缓存写入。数据不会错，下次启动重拉。真要修就是
+    `stop()` 里在 `quit()` 前排空一次队列。
+18. **A-3** — 实锤，但只影响 OpenGL 后端，Windows 主路径碰不到。
+19. **D-7** — 当**死代码删除**处理：`browsePerson()` + `personBrowseStarted` + 相关
+    `FetchParams.personIds` 分支（如果没有别的使用者）。和 `cachedImageUrl()` 一个性质。
+
+### 顺带记下的、不在 26 条里的
+
+- **`networkError` 是死信号**（3 处 emit、0 个 connect）。D-3 修完后，
+  网络失败对用户就是"UI 不动"。要不要给可见提示是一个**产品决定**，不是 bug 修复。
+- **`getJson()` 也无条件调 cb**（`embyclient.cpp:153`），和 D-3 同形状但**不能同法修** ——
+  它的 cb 还负责结束 loading 状态，直接 `return` 会让转圈停不下来。要单独设计。
+- **DBWorker 五个 `generation` 形参全是 `Q_UNUSED`**。核实下来**它们本来就不需要**
+  （QueuedConnection + 串行处理保证 clear 之前投递的写入必在 DELETE 之前执行）。
+  是五个死参数，不是五个漏洞。要清就当签名清理做。
 
 ## 今天已修（不在上表内）
 
