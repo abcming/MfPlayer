@@ -166,12 +166,15 @@ void EmbyClient::postJson(const QString &path, const QJsonObject &body,
     m_curl->post(url.toString(QUrl::FullyEncoded), defaultHeaders(), data, [guard, cb = std::move(callback)](const CurlResponse &r) {
         if (!guard) return;
         if (!r.ok()) {
+            // 失败不调 cb —— 调用方 (markPlayed / addFavorite …) 的 cb 一律无条件
+            // emit 成功信号, 喂个空 JSON 拦不住。失败的表现就是 UI 不动
             if (r.httpStatus == 401)
                 emit guard->tokenExpired();
             else
                 emit guard->networkError(r.errorString());
+            return;
         }
-        cb(QJsonDocument::fromJson(r.ok() ? r.body : QByteArray()));
+        cb(QJsonDocument::fromJson(r.body));
     });
 }
 
@@ -186,10 +189,12 @@ void EmbyClient::deleteJson(const QString &path,
     m_curl->del(url.toString(QUrl::FullyEncoded), defaultHeaders(), [guard, cb = std::move(callback)](const CurlResponse &r) {
         if (!guard) return;
         if (!r.ok()) {
+            // 同 postJson: 失败不调 cb
             if (r.httpStatus == 401)
                 emit guard->tokenExpired();
             else
                 emit guard->networkError(r.errorString());
+            return;
         }
         cb();
     });
