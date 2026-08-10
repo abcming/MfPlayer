@@ -239,8 +239,8 @@ void EmbyClient::fetchSeasons(const QString &seriesId) {
     query.addQueryItem("SortBy", "IndexNumber");
     query.addQueryItem("SortOrder", "Ascending");
 
-    getJson("/emby/Shows/" + seriesId + "/Seasons", query, [this](const QJsonDocument &doc) {
-        emit seasonsFetched(doc.object()["Items"].toArray());
+    getJson("/emby/Shows/" + seriesId + "/Seasons", query, [this, seriesId](const QJsonDocument &doc) {
+        emit seasonsFetched(doc.object()["Items"].toArray(), seriesId);
     });
 }
 
@@ -252,8 +252,9 @@ void EmbyClient::fetchEpisodes(const QString &seriesId, const QString &seasonId)
     query.addQueryItem("SortBy", "IndexNumber");
     query.addQueryItem("SortOrder", "Ascending");
 
-    getJson("/emby/Shows/" + seriesId + "/Episodes", query, [this](const QJsonDocument &doc) {
-        emit episodesFetched(doc.object()["Items"].toArray());
+    getJson("/emby/Shows/" + seriesId + "/Episodes", query,
+            [this, seriesId, seasonId](const QJsonDocument &doc) {
+        emit episodesFetched(doc.object()["Items"].toArray(), seriesId, seasonId);
     });
 }
 

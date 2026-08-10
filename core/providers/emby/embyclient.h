@@ -165,8 +165,11 @@ signals:
     void librariesFetched(const QJsonArray &libraries);
     void itemsFetched(const QJsonArray &items, const QString &parentId, const QString &cacheKey, int totalRecordCount = -1);
     void itemDetailFetched(const QJsonObject &detail);
-    void seasonsFetched(const QJsonArray &seasons);
-    void episodesFetched(const QJsonArray &episodes);
+    // 带上请求身份: 响应回来时不许再用"当前"成员变量推断它属于谁 —— 飞行期间
+    // 用户可能已经翻到别的剧集/季了 (见 audit D-2)
+    void seasonsFetched(const QJsonArray &seasons, const QString &seriesId);
+    void episodesFetched(const QJsonArray &episodes, const QString &seriesId,
+                         const QString &seasonId);
     void resumeFetched(const QJsonArray &items);
     void latestFetched(const QJsonArray &items, const QString &tag);
     void similarFetched(const QJsonArray &items, const QString &excludeId);

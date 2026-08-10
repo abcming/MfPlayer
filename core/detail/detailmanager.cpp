@@ -254,18 +254,24 @@ void DetailManager::onItemDetailFetched(const QJsonObject &detail) {
     emit itemDetailReady(itemId, detail.toVariantMap());
 }
 
-void DetailManager::onSeasonsFetched(const QJsonArray &seasons) {
+void DetailManager::onSeasonsFetched(const QJsonArray &seasons, const QString &seriesId) {
+    // 响应必须属于当前正在看的剧集。不判的话: 请求 A 在飞时用户翻到 B,
+    // A 的季列表回来会被 putSeasons(B) 写进 SQLite (持久污染), 紧接着 :264
+    // 还会用 "B 的剧集 id + A 的季 id" 再发一个请求, 回来再污染一次集缓存
+    if (seriesId != m_currentSeriesId) return;
     QJsonArray sorted = sortByIndexNumber(seasons);
-    m_cache->putSeasons(m_currentSeriesId, sorted);
+    m_cache->putSeasons(seriesId, sorted);
     m_seasonModel->setItems(sorted);
     emit seasonsChanged();
-    if (!m_currentSeriesId.isEmpty() && !sorted.isEmpty()) {
+    if (!sorted.isEmpty()) {
         m_currentSeasonId = sorted.first().toObject()["Id"].toString();
-        m_emby->fetchEpisodes(m_currentSeriesId, m_currentSeasonId);
+        m_emby->fetchEpisodes(seriesId, m_currentSeasonId);
     }
 }
 
-void DetailManager::onEpisodesFetched(const QJsonArray &episodes) {
-    m_cache->putEpisodes(m_currentSeriesId, m_currentSeasonId, episodes);
+void DetailManager::onEpisodesFetched(const QJsonArray &episodes, const QString &seriesId,
+                                      const QString &seasonId) {
+    if (seriesId != m_currentSeriesId || seasonId != m_currentSeasonId) return;
+    m_cache->putEpisodes(seriesId, seasonId, episodes);
     m_episodeModel->setItems(episodes);
 }

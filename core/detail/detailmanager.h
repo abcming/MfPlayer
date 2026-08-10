@@ -50,8 +50,9 @@ signals:
 
 private:
     void onItemDetailFetched(const QJsonObject &detail);
-    void onSeasonsFetched(const QJsonArray &seasons);
-    void onEpisodesFetched(const QJsonArray &episodes);
+    void onSeasonsFetched(const QJsonArray &seasons, const QString &seriesId);
+    void onEpisodesFetched(const QJsonArray &episodes, const QString &seriesId,
+                           const QString &seasonId);
 
     EmbyClient *m_emby;
     CacheStore *m_cache;
