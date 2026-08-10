@@ -44,10 +44,13 @@ Column {
             required property string year
             required property string itemId
             required property string itemType
+            required property var playbackPositionTicks   // 电影续播位置
 
             width: 150; height: 270
             radius: 6
             color: "transparent"
+
+            HoverHandler { id: _simHover }
 
             Column {
                 anchors.fill: parent
@@ -59,7 +62,19 @@ Column {
                     height: 213
                     imgRadius: 6
                     lazyLoad: true
+                    externalHover: _simHover.hovered
                     embyUrl: Server.emby.imageUrl(imageUrl)
+
+                    // 封面正中的播放钮 —— 剧集会先问 NextUp 再起播
+                    CardPlayButton {
+                        visible: _simHover.hovered && Nav.isPlayable(itemType)
+                        onClicked: Nav.playCard({
+                            itemId: itemId,
+                            itemName: itemName,
+                            itemType: itemType,
+                            startTicks: playbackPositionTicks || 0
+                        })
+                    }
                 }
 
                 Label {

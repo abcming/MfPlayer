@@ -279,6 +279,8 @@ HdrPqOverlay {
             required property bool played
             required property string itemName
             required property string year
+            required property string itemType            // 播放钮判断能不能播
+            required property var playbackPositionTicks  // 电影续播位置
             width: 150; height: 270
             radius: 6
             color: "transparent"
@@ -306,6 +308,17 @@ HdrPqOverlay {
                         lazyLoad: true
                         externalHover: _latestHover.hovered
                         embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
+
+                        // 封面正中的播放钮 —— 剧集会先问 NextUp 再起播
+                        CardPlayButton {
+                            visible: _latestHover.hovered && Nav.isPlayable(itemType)
+                            onClicked: Nav.playCard({
+                                itemId: itemId,
+                                itemName: itemName,
+                                itemType: itemType,
+                                startTicks: playbackPositionTicks || 0
+                            })
+                        }
                     }
 
                     // Action buttons (top-right corner)

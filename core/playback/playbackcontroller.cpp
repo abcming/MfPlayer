@@ -30,6 +30,8 @@ PlaybackController::PlaybackController(EmbyClient *emby, CacheStore *cache,
 
     connect(m_emby, &EmbyClient::episodesFetched,
             this, &PlaybackController::onEpisodesFetched);
+    connect(m_emby, &EmbyClient::nextUpFetched,
+            this, &PlaybackController::onNextUpFetched);
 
     initProgressTimer();
 }
@@ -278,6 +280,23 @@ void PlaybackController::onEpisodesFetched(const QJsonArray &episodes,
     if (seriesId != m_playlistSeriesId || seasonId != m_playlistSeasonId) return;
     m_currentPlaylist = episodes;
     emit currentPlaylistChanged();
+}
+
+// 剧集海报点播放钮 —— 卡片只有剧集 id, 得先问该从哪一集播
+void PlaybackController::resolveSeriesEntry(const QString &seriesId) {
+    if (seriesId.isEmpty()) return;
+    m_pendingSeriesId = seriesId;
+    m_emby->fetchNextUp(seriesId);
+}
+
+void PlaybackController::onNextUpFetched(const QJsonObject &episode, const QString &seriesId) {
+    // 同 onEpisodesFetched: nextUpFetched 是广播信号, DetailManager 也连着,
+    // 只认自己请求的那部剧
+    if (seriesId != m_pendingSeriesId) return;
+    m_pendingSeriesId.clear();
+    // 空对象照发 —— 服务器给不出下一集 (全新的剧, 取决于 Emby 的 NextUp 口径),
+    // 由 QML 决定退回详情页还是别的
+    emit seriesEntryResolved(seriesId, episode);
 }
 
 void PlaybackController::playLocalFile(const QString &filePath) {

@@ -78,6 +78,10 @@ public slots:
     // (那边的 m_currentSeriesId/m_episodeModel 是详情页的状态, 播放页写进去
     //  会把用户选的季冲掉, 两边还会抢同一组成员变量)
     Q_INVOKABLE void loadPlaylist(const QString &seriesId, const QString &seasonId);
+    // 剧集海报上的播放钮用 —— 卡片只知道剧集 id, 不知道该从哪一集播。
+    // 问服务器要 NextUp: 看过的给续播那一集, 没看过的给第一集。
+    // 结果走 seriesEntryResolved (可能是空的 —— 那就交给 QML 决定怎么办)
+    Q_INVOKABLE void resolveSeriesEntry(const QString &seriesId);
     Q_INVOKABLE void toggleFullscreen();
     void setRootWindow(QWindow *window);
 
@@ -94,6 +98,7 @@ signals:
     void currentItemDetailChanged();
     void currentMediaSourcesChanged();
     void currentPlaylistChanged();
+    void seriesEntryResolved(const QString &seriesId, const QJsonObject &episode);
     void speedChanged();
     void tracksChanged();
     void sidChanged();
@@ -108,6 +113,7 @@ private:
     void reportStopForCurrent();
     void onEpisodesFetched(const QJsonArray &episodes, const QString &seriesId,
                            const QString &seasonId);
+    void onNextUpFetched(const QJsonObject &episode, const QString &seriesId);
     QJsonArray streamsForSelectedSource() const;
     void fuzzySelectSubtitle();
     static double jaroWinkler(const QString &a, const QString &b);
@@ -142,4 +148,6 @@ private:
     QString m_playlistSeriesId;
     QString m_playlistSeasonId;
     QJsonArray m_currentPlaylist;
+    // resolveSeriesEntry 的请求身份, 同理: nextUpFetched 也是广播信号
+    QString m_pendingSeriesId;
 };

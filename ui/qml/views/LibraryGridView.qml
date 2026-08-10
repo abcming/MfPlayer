@@ -250,10 +250,10 @@ GridView {
                 externalHover: _h.hovered
                 embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
 
-                // 封面正中的播放钮 —— 只给「集」Tab (6)。电影/剧集海报点进去是详情页,
-                // 那里才有版本/音轨/字幕可选; 单集没这些选择, 直接播才省事
+                // 封面正中的播放钮。isPlayable 天然挡掉流派 (Tab 4) 和工作室 (Tab 5) ——
+                // 那两个的 itemType 不是可播条目。剧集会先问 NextUp 再起播
                 CardPlayButton {
-                    visible: _h.hovered && Library.currentTab === 6
+                    visible: _h.hovered && Nav.isPlayable(itemType)
                     onClicked: Nav.playCard({
                         itemId: itemId,
                         itemName: itemName,

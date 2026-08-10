@@ -75,6 +75,8 @@ ApplicationWindow {
         Nav.playerPage = playerPage
         Nav.browsePage = browsePage
         Nav.loginDialog = loginDialog
+        // singleton 看不见 context property, 剧集起播要用它问 NextUp
+        Nav.playback = Playback
 
         let sw = Server.settings.windowWidth
         let sh = Server.settings.windowHeight

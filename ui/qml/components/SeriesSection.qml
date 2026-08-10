@@ -192,11 +192,16 @@ ColumnLayout {
             required property int indexNumber
             required property string itemName
             required property string itemId
+            required property string seriesId             // 播放钮补同季播放列表用
+            required property string seasonId
+            required property var playbackPositionTicks   // 续播位置
 
             width: 240
             height: 196   // 从 180 加高: 标题现在最多两行, 原来的 29px 只够一行
             radius: 6
             color: "transparent"
+
+            HoverHandler { id: _epHover }
 
             Column {
                 anchors.fill: parent
@@ -208,9 +213,25 @@ ColumnLayout {
                     height: 135
                     imgRadius: 4
                     lazyLoad: true
+                    externalHover: _epHover.hovered
                     embyUrl: imageUrl
                         ? Server.emby.imageUrl(imageUrl)
                         : root._episodeFallbackUrl
+
+                    // 封面正中的播放钮 —— 点封面本身仍是进单集详情页, 不改原行为
+                    CardPlayButton {
+                        visible: _epHover.hovered
+                        onClicked: Nav.playCard({
+                            itemId: itemId,
+                            itemName: itemName,
+                            itemType: Str.typeEpisode,
+                            seriesName: root.itemData.Name || "",
+                            indexNumber: indexNumber,
+                            startTicks: playbackPositionTicks || 0,
+                            seriesId: seriesId,
+                            seasonId: seasonId
+                        })
+                    }
                 }
 
                 RowLayout {
