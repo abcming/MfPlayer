@@ -115,6 +115,8 @@ HdrPqOverlay {
             required property string itemName
             required property int indexNumber
             required property var year
+            required property string seriesId   // 播放钮补同季播放列表用
+            required property string seasonId
             width: 240; height: 180
             radius: 6
             color: "transparent"
@@ -189,7 +191,9 @@ HdrPqOverlay {
                             itemType: itemType,
                             seriesName: seriesName,
                             indexNumber: indexNumber,
-                            startTicks: playbackPositionTicks || 0
+                            startTicks: playbackPositionTicks || 0,
+                            seriesId: seriesId,
+                            seasonId: seasonId
                         })
                     }
 

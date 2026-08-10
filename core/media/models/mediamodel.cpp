@@ -33,6 +33,8 @@ QVariant MediaModel::data(const QModelIndex &index, int role) const {
     case PlayedRole:     return item.played;
     case BackdropUrlRole: return item.backdropUrl;
     case IsFavoriteRole: return item.isFavorite;
+    case SeriesIdRole:   return item.seriesId;
+    case SeasonIdRole:   return item.seasonId;
     }
     return {};
 }
@@ -56,6 +58,8 @@ QHash<int, QByteArray> MediaModel::roleNames() const {
         {PlayedRole, "played"},
         {BackdropUrlRole, "backdropUrl"},
         {IsFavoriteRole, "isFavorite"},
+        {SeriesIdRole, "seriesId"},
+        {SeasonIdRole, "seasonId"},
     };
 }
 
@@ -226,6 +230,8 @@ MediaModel::Item MediaModel::fromJson(const QJsonObject &obj) {
     }
     item.overview = obj["Overview"].toString();
     item.parentId = obj["ParentId"].toString();
+    item.seriesId = obj["SeriesId"].toString();
+    item.seasonId = obj["SeasonId"].toString();
     item.seriesName = obj["SeriesName"].toString();
     item.sortName = obj["SortName"].toString();
     if (item.sortName.isEmpty())

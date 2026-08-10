@@ -27,6 +27,8 @@ public:
         PlayedRole,
         BackdropUrlRole,
         IsFavoriteRole,
+        SeriesIdRole,
+        SeasonIdRole,
     };
 
     explicit MediaModel(QObject *parent = nullptr);
@@ -53,6 +55,9 @@ signals:
 private:
     struct Item {
         QString id, name, type, imageUrl, overview, parentId, seriesName, sortName;
+        // 卡片直接起播要用这两个拉同季播放列表。**别拿 parentId 当季 id** ——
+        // Resume/收藏这些接口压根不返回 ParentId, Emby 给的是独立的 SeasonId 字段
+        QString seriesId, seasonId;
         QString year;
         QString backdropUrl;
         int indexNumber = 0;

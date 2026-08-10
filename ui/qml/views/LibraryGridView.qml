@@ -214,6 +214,8 @@ GridView {
         required property string seriesName
         required property int indexNumber            // 播放钮拼「第 N 集」用
         required property var playbackPositionTicks  // 播放钮续播位置用
+        required property string seriesId            // 播放钮补同季播放列表用
+        required property string seasonId
 
         width: grid.cellWidth - 10
         height: grid.cellHeight - 10
@@ -258,7 +260,9 @@ GridView {
                         itemType: itemType,
                         seriesName: seriesName,
                         indexNumber: indexNumber,
-                        startTicks: playbackPositionTicks || 0
+                        startTicks: playbackPositionTicks || 0,
+                        seriesId: seriesId,
+                        seasonId: seasonId
                     })
                 }
             }

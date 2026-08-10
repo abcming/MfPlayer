@@ -28,6 +28,9 @@ PlaybackController::PlaybackController(EmbyClient *emby, CacheStore *cache,
         m_volumeSaveTimer->start();
     });
 
+    connect(m_emby, &EmbyClient::episodesFetched,
+            this, &PlaybackController::onEpisodesFetched);
+
     initProgressTimer();
 }
 
@@ -150,6 +153,10 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
     m_currentPlayItemId = itemId;
     m_currentItemDetail = m_cache->getItemDetail(itemId);
     m_currentMediaSources = m_currentItemDetail["MediaSources"].toArray();
+    // 换集时这两个值变了就得说一声, 否则 QML 那边的绑定 (版本选择器吃的
+    // _versionSources) 一直停在上一集
+    emit currentItemDetailChanged();
+    emit currentMediaSourcesChanged();
     int gen = ++m_playGeneration;
 
     // Resolve MediaSourceId from current item if not provided and available
@@ -177,13 +184,19 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
         // 而 updateCachedProgress() 会把它原样 putItemDetail() 写回, 整体覆盖掉
         // 缓存里的完整详情。分开放, "m_currentItemDetail 要么完整要么空"才立得住
         if (!mediaSources.isEmpty()) {
-            m_currentMediaSources = mediaSources;
-            // 详情未预缓存时 (播放页直接切集) playItem 里解析不到 srcId —
-            // 用 PlaybackInfo 的第一个 source 补上。否则 streamsForSelectedSource()
-            // 永远匹配不到, 外挂字幕全被跳过, 字幕菜单也退化成 mpv 原始轨道名
-            if (m_currentMediaSourceId.isEmpty())
-                m_currentMediaSourceId = mediaSources.first().toObject()["Id"].toString();
-            emit currentMediaSourcesChanged();
+            // **只在原来为空时才填**。请求带了 MediaSourceId (playItem 开头会拿
+            // 详情里的第一个源补上), Emby 就只回那一个 —— 拿它覆盖等于把详情里的
+            // 全部版本抹成一个, 版本选择器只剩当前版本。详情页那条路看不出来
+            // (它优先吃 itemData.MediaSources), 卡片直接起播就现原形了
+            if (m_currentMediaSources.isEmpty()) {
+                m_currentMediaSources = mediaSources;
+                // 详情未预缓存时 (播放页直接切集) playItem 里解析不到 srcId —
+                // 用 PlaybackInfo 的第一个 source 补上。否则 streamsForSelectedSource()
+                // 永远匹配不到, 外挂字幕全被跳过, 字幕菜单也退化成 mpv 原始轨道名
+                if (m_currentMediaSourceId.isEmpty())
+                    m_currentMediaSourceId = mediaSources.first().toObject()["Id"].toString();
+                emit currentMediaSourcesChanged();
+            }
         }
         m_currentPlaySessionId = playSessionId;
         // 上报与 loadfile 并行 — 起播不依赖 Emby 回执, 省一个网络往返
@@ -241,12 +254,42 @@ void PlaybackController::playItem(const QString &itemId, qint64 startTimeTicks,
     }, m_currentMediaSourceId, m_pendingSubIdx);
 }
 
+// 卡片直接起播时补齐播放列表 —— 卡片手上只有当前这一集, 不补的话上下集钮不出现、
+// 播完也接不上下一集。不阻塞起播: 起播照走 playItem, 列表回来了 QML 再填。
+void PlaybackController::loadPlaylist(const QString &seriesId, const QString &seasonId) {
+    if (seriesId.isEmpty() || seasonId.isEmpty()) return;
+    m_playlistSeriesId = seriesId;
+    m_playlistSeasonId = seasonId;
+    // 用户进过这部剧的详情页就已经缓存过了, 直接给, 省一个往返
+    QJsonArray cached = m_cache->getEpisodes(seriesId, seasonId);
+    if (!cached.isEmpty()) {
+        m_currentPlaylist = cached;
+        emit currentPlaylistChanged();
+        return;
+    }
+    m_emby->fetchEpisodes(seriesId, seasonId);
+}
+
+void PlaybackController::onEpisodesFetched(const QJsonArray &episodes,
+                                           const QString &seriesId,
+                                           const QString &seasonId) {
+    // episodesFetched 是广播信号, DetailManager 也连着。不带身份判断的话,
+    // 用户在详情页翻季触发的响应会直接灌进播放列表 —— 正在播的这一季就没了
+    if (seriesId != m_playlistSeriesId || seasonId != m_playlistSeasonId) return;
+    m_currentPlaylist = episodes;
+    emit currentPlaylistChanged();
+}
+
 void PlaybackController::playLocalFile(const QString &filePath) {
     ++m_playGeneration;  // cancel in-flight playItem callbacks (fetchPlaybackInfo)
     reportStopForCurrent();  // 若正在播 Emby 条目, 先结束其 PlaySession
     // Clear stale Emby playback state
     m_currentItemDetail = {};
     m_currentMediaSources = {};
+    m_currentPlaylist = {};
+    m_playlistSeriesId.clear();
+    m_playlistSeasonId.clear();
+    emit currentPlaylistChanged();
     m_pendingSubIdx = -1;  // auto: let fuzzy matching decide
 
     // Reset sid to auto — a previous Emby play may have left a numeric sid
@@ -274,6 +317,10 @@ void PlaybackController::stop() {
     ++m_playGeneration;  // cancel any pending playItem callbacks
     m_currentItemDetail = {};
     m_currentMediaSources = {};
+    m_currentPlaylist = {};
+    m_playlistSeriesId.clear();
+    m_playlistSeasonId.clear();
+    emit currentPlaylistChanged();
     reportStopForCurrent();
     m_progressTimer->stop();
     m_mpv->stop();

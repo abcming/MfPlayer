@@ -21,6 +21,7 @@ class PlaybackController : public QObject {
     Q_PROPERTY(MpvController* mpv READ mpv CONSTANT)
     Q_PROPERTY(QJsonObject currentItemDetail READ currentItemDetail NOTIFY currentItemDetailChanged FINAL)
     Q_PROPERTY(QJsonArray currentMediaSources READ currentMediaSources NOTIFY currentMediaSourcesChanged FINAL)
+    Q_PROPERTY(QJsonArray currentPlaylist READ currentPlaylist NOTIFY currentPlaylistChanged FINAL)
     Q_PROPERTY(double speed READ speed NOTIFY speedChanged FINAL)
     Q_PROPERTY(QVariantList tracks READ tracks NOTIFY tracksChanged FINAL)
     Q_PROPERTY(int currentSid READ currentSid NOTIFY sidChanged FINAL)
@@ -39,6 +40,7 @@ public:
     MpvController *mpv() const { return m_mpv; }
     QJsonObject currentItemDetail() const { return m_currentItemDetail; }
     QJsonArray currentMediaSources() const { return m_currentMediaSources; }
+    QJsonArray currentPlaylist() const { return m_currentPlaylist; }
     double speed() const { return m_mpv->speed(); }
     QVariantList tracks() const { return m_mpv->tracks(); }
     int currentSid() const { return m_mpv->currentSid(); }
@@ -71,6 +73,11 @@ public slots:
                                       const QString &lang = QString(),
                                       bool select = true) { m_mpv->addSubtitleFile(url, title, lang, select); }
     Q_INVOKABLE void reportPlayStopped(qint64 ticks) { m_emby->reportPlaybackStop(m_currentPlayItemId, ticks); }
+    // 从卡片直接起播时用 —— 卡片只带了当前这一集, 播完接不上下一集。
+    // 拉这一季的完整集列表填 currentPlaylist, 不经手 DetailManager
+    // (那边的 m_currentSeriesId/m_episodeModel 是详情页的状态, 播放页写进去
+    //  会把用户选的季冲掉, 两边还会抢同一组成员变量)
+    Q_INVOKABLE void loadPlaylist(const QString &seriesId, const QString &seasonId);
     Q_INVOKABLE void toggleFullscreen();
     void setRootWindow(QWindow *window);
 
@@ -86,6 +93,7 @@ signals:
     void localPlaylistReady(QVariantList playlist);
     void currentItemDetailChanged();
     void currentMediaSourcesChanged();
+    void currentPlaylistChanged();
     void speedChanged();
     void tracksChanged();
     void sidChanged();
@@ -98,6 +106,8 @@ private:
     void onProgressTimer();
     void updateCachedProgress(const QString &itemId, qint64 finalTicks);
     void reportStopForCurrent();
+    void onEpisodesFetched(const QJsonArray &episodes, const QString &seriesId,
+                           const QString &seasonId);
     QJsonArray streamsForSelectedSource() const;
     void fuzzySelectSubtitle();
     static double jaroWinkler(const QString &a, const QString &b);
@@ -127,4 +137,9 @@ private:
     // MediaSources 的唯一权威来源: 起播时从详情里取, PlaybackInfo 回来后覆盖成更新鲜的。
     // 单独放一份而不是塞进 m_currentItemDetail, 就是为了守住上面那条
     QJsonArray m_currentMediaSources;
+    // loadPlaylist 请求身份。episodesFetched 是广播信号 (DetailManager 也连着),
+    // 回来时必须拿这两个对上号才收 —— 否则详情页翻季时飞行中的响应会灌进播放列表
+    QString m_playlistSeriesId;
+    QString m_playlistSeasonId;
+    QJsonArray m_currentPlaylist;
 };

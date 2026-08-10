@@ -37,8 +37,9 @@ QtObject {
     //   1. 不传 itemData。卡片手上只有 model 的几个 role，没有完整详情。
     //      PlaybackController 会用 PlaybackInfo 回来的 MediaSources 补上，
     //      版本选择器照常能用（这条路正是 audit B-2 修好的）。
-    //   2. playlistData 只有当前这一集 —— 卡片拿不到同季列表，要拿得多发一次请求。
-    //      **代价：播完不会自动接下一集**，想连播还是得从详情页进。
+    //   2. playlistData 先只放当前这一集，起播不等网络。PlayerPage 拿 seriesId +
+    //      seasonId 调 Playback.loadPlaylist() 去补同季列表，回来了再替换 ——
+    //      上下集钮、播放列表面板、播完自动接下一集都靠它。
     function playCard(c) {
         var isEpisode = c.itemType === Str.typeEpisode
         pushPlayer({
@@ -55,7 +56,10 @@ QtObject {
             startTimeTicks: c.startTicks || 0,
             mediaSourceId: "",
             audioIndex: -1,
-            subtitleIndex: -1
+            subtitleIndex: -1,
+            // 只有「集」需要补列表。电影/剧集这两个是空的，PlayerPage 就不会去补
+            seriesId: isEpisode ? (c.seriesId || "") : "",
+            seasonId: isEpisode ? (c.seasonId || "") : ""
         })
     }
 

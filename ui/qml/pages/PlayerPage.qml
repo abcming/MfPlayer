@@ -70,6 +70,10 @@ Item {
     property int audioIndex: -1
     property int subtitleIndex: -2
     property string localFile: ""
+    // 卡片直接起播时才有值 —— 卡片只带了当前这一集, 靠这两个去补同季列表。
+    // 从详情页进来的 playlistData 本来就是全的, 这里是空的, 不会触发
+    property string seriesId: ""
+    property string seasonId: ""
 
     property bool _localPlayStarted: false
 
@@ -97,6 +101,9 @@ Item {
     Component.onCompleted: {
         playStartTimer.start()
         forceActiveFocus()
+        // 卡片起播只带了当前这一集 —— 去补同季列表。不阻塞起播, 回来了再填
+        if (playlistData.length <= 1 && seriesId && seasonId)
+            Playback.loadPlaylist(seriesId, seasonId)
     }
     // 同 DetailPage: pop 到销毁之间还有 350ms 过渡, 400ms 的 timer 会在这个窗口里
     // 触发。不停掉就是**在用户已经退出的播放器上起播** —— 声音先出来, 画面没有
@@ -801,6 +808,33 @@ Item {
         } else if (k === s.keyVolumeDown) {
             Playback.setVolume(Math.max(0, Playback.volume - 5))
             event.accepted = true
+        }
+    }
+
+    // ── 卡片起播时补回来的同季播放列表 ──
+    Connections {
+        target: Playback
+        function onCurrentPlaylistChanged() {
+            // 只有卡片起播才设这两个。从详情页进来的 playlistData 是全的, 不许被盖掉
+            if (!playerRoot.seriesId || !playerRoot.seasonId) return
+            var pl = Playback.currentPlaylist
+            if (!pl || pl.length === 0) return   // stop() 清空时也会发, 别当成数据
+            var list = []
+            var idx = -1
+            for (var i = 0; i < pl.length; i++) {
+                var ep = pl[i]
+                if (ep.Id === playerRoot.itemId) idx = i
+                // currentPlaylist 是 Emby 原始 JSON, playlistData 用的是 MediaModel
+                // 的 role 名 (详情页那条路走 episodeModel.getAllItems()), 转一道
+                list.push({
+                    itemId: ep.Id,
+                    itemName: ep.Name || "",
+                    indexNumber: ep.IndexNumber || 0,
+                    seriesName: ep.SeriesName || ""
+                })
+            }
+            playerRoot.playlistData = list
+            playerRoot.episodeIndex = idx >= 0 ? idx : 0
         }
     }
 
