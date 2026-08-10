@@ -117,7 +117,13 @@ private:
     bool m_playing = false;
     bool m_eofReached = false;  // eof-reached 边沿检测, 防 endOfFile 重复触发
     std::atomic<bool> m_hasVideo{false};
-    int m_volume = 80;
+    // m_volume / m_speed 只由 mpv 的属性观察事件更新 —— 它们是"mpv 现在是什么",
+    // 初值取 libmpv 的默认值, 别写成 UI 想要的值 (那会让 getter 在首个事件回来前撒谎)
+    int m_volume = 100;
+    // 上次**请求**的值, 去重专用。哨兵初值保证第一次 setVolume/setSpeed 一定发得出去,
+    // 不管 libmpv 默认是多少 (见 .cpp 的说明)
+    int m_requestedVolume = -1;
+    double m_requestedSpeed = -1.0;
     QVariantList m_tracks;
     int m_sid = -1;
     int m_aid = -1;

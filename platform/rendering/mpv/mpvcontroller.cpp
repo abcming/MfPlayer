@@ -345,8 +345,9 @@ void MpvController::setChapter(int ch) {
 }
 
 void MpvController::setSpeed(double speed) {
-  if (!m_mpv || speed == m_speed)
+  if (!m_mpv || speed == m_requestedSpeed)  // 同 setVolume: 比请求值不比确认值
     return;
+  m_requestedSpeed = speed;
   mpv_set_property_async(m_mpv, 0, "speed", MPV_FORMAT_DOUBLE, &speed);
 }
 
@@ -432,8 +433,15 @@ void MpvController::seek(double pos) {
 }
 
 void MpvController::setVolume(int vol) {
-  if (!m_mpv || vol == m_volume)
+  // 去重比的是"上次**请求**值", 不是 m_volume (那是上次**观察事件确认**的值)。
+  // 比确认值有两个坑:
+  //   启动: m_volume 初值与 libmpv 默认不符时, 恢复用户音量的那次调用会被判成
+  //         "无需设置", 随后观察事件把 libmpv 的默认值写回设置, 用户的音量丢失
+  //   拖动: 50→60→50 时, 60 的事件还没回来 m_volume 仍是 50, 最后那个 50 被吞掉,
+  //         mpv 停在 60 而用户手停在 50
+  if (!m_mpv || vol == m_requestedVolume)
     return;
+  m_requestedVolume = vol;
   int64_t v = vol;
   // Async: first call may trigger WASAPI lazy init (~100ms); must not block UI.
   mpv_set_property_async(m_mpv, 0, "volume", MPV_FORMAT_INT64, &v);
