@@ -185,7 +185,7 @@ ioPool().start([guard, ...]() {
 - `m_playGeneration` — 每次 play/stop 自增，回调里检查是否过期
 - `m_writeGeneration` — CacheStore 的延迟 SQL 写入用，clearAll() 时自增取消旧写入
 - 媒体缓存: 内存 HashMap + SQLite 双层，内存优先，过期数据留作 fallback。SQL 写入走 DB Worker
-- 图片加载: CachedImage → CacheStore::cachedImageUrl (内存缓存, 无 stat) → ImageLoadQueue (max 3 concurrent) → CacheStore::providerUrl (主线程解析路径) → ImageCacheProvider (reader 线程, 只解码)
+- 图片加载: CachedImage → CacheStore::providerUrl (内存缓存查命中 + 主线程解析路径, 无 stat) → ImageLoadQueue (max 3 concurrent) → ImageCacheProvider (reader 线程, 只解码)
 - RoundedImage: Stretch fill + roundedmask.frag shader 做 GPU 圆角, 不用 OpacityMask (无额外 FBO)
 - Icon: 23 个 MFIcon_* 全部常驻, visible 切换, 不用 Loader (避免切换延迟)
 - Flickable: 全部 `interactive: false`, 用 WheelHandler + NumberAnimation 模拟滚动 (统一手感)

@@ -361,25 +361,6 @@ QString CacheStore::providerUrl(const QString &url) const {
     return "image://imgcache/" + h + "/" + QString::fromLatin1(enc);
 }
 
-QString CacheStore::cachedImageUrl(const QString &url) {
-    QString hashKey = hashUrl(url);
-
-    // Fast path: trust the in-memory cache — skip stat syscalls (QFile::exists +
-    // QFileInfo::size) for entries already verified at startup by loadImageCache().
-    // Worst case if the file was deleted externally: Image shows nothing, next
-    // scroll cycle re-downloads. acceptably rare (only affects expireCache races).
-    {
-auto it = m_imageCache.constFind(hashKey);
-        if (it != m_imageCache.constEnd())
-            return it->fileUrl;
-    }
-
-    // loadImageCache() populated m_imageCache at startup. If the
-    // image is not in memory, it genuinely doesn't exist on disk.
-    // No DB fallback — keeps the scroll hot path SQLite-free.
-    return {};
-}
-
 void CacheStore::clearContentCache() {
     ++m_writeGeneration;  // cancel pending writes queued to DBWorker
     m_itemsCache.clear();
