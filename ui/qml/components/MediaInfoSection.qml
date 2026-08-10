@@ -123,6 +123,7 @@ Column {
             radius: 8
             color: Qt.rgba(30/255, 30/255, 30/255, 0.7)
             border { color: Theme.active; width: 1 }
+            clip: true   // 值换行后行数变多时, 不让内容画出边框外
 
             property var stream: modelData.stream
             property string cardType: modelData.cardType
@@ -174,8 +175,10 @@ Column {
                             Label {
                                 text: modelData.v; color: Theme.textMuted; font.pixelSize: 10
                                 Layout.fillWidth: true
-                                elide: Text.ElideRight   // 值保持一行, 太长就省略, 不撑高卡片
-                                horizontalAlignment: Text.AlignRight
+                                // 值紧跟在 key 后面 (中间只隔一个 spacing), 过长就换行。
+                                // 别加 horizontalAlignment: AlignRight —— 那会变成两边对齐,
+                                // 封铭要的是原来这种左对齐的样子
+                                wrapMode: Text.Wrap
                             }
                         }
                     }
