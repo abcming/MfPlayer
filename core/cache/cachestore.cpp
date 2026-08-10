@@ -362,7 +362,7 @@ QString CacheStore::providerUrl(const QString &url) const {
 }
 
 void CacheStore::clearContentCache() {
-    ++m_writeGeneration;  // cancel pending writes queued to DBWorker
+    ++m_writeGeneration;
     m_itemsCache.clear();
     m_itemsCacheTime.clear();
     m_itemsCacheLru.clear();
@@ -376,11 +376,13 @@ void CacheStore::clearContentCache() {
 }
 
 void CacheStore::clearImageCache() {
-    ++m_writeGeneration;  // cancel pending writes queued to DBWorker
-    {
-m_imageCache.clear();
-        m_pendingDownloads.clear();
-    }
+    // ++gen 让所有在飞的下载/重试在写回时作废 (闸门在 doFetchImage 的写回处)
+    ++m_writeGeneration;
+    m_imageCache.clear();
+    m_pendingDownloads.clear();
+    m_downloadQueue.clear();   // 还没发出去的直接不发了
+    // m_failedUrls 故意不清: 它是 CDN 冷却表, 清掉等于清缓存后把所有失败 URL
+    // 一次性重打一遍。宁可少几张图, 别把 CDN 惹了
 
     // SQL DELETE + recursive dir removal on DBWorker thread — no main-thread blocking
     QMetaObject::invokeMethod(m_dbWorker, "clearImageCache", Qt::QueuedConnection,
@@ -456,7 +458,7 @@ auto it = m_imageCache.find(hash);
         return;
     }
     m_activeDownloads++;
-    doFetchImage(url, 1, url);
+    doFetchImage(url, 1, url, m_writeGeneration);
 }
 
 void CacheStore::setSkipSslVerify(bool skip) {
@@ -465,12 +467,13 @@ void CacheStore::setSkipSslVerify(bool skip) {
 
 void CacheStore::processDownloadQueue() {
     if (m_downloadQueue.isEmpty()) return;
+    // 队列在 clearImageCache() 里被清空, 所以取出来的一定是当前代的任务
     auto next = m_downloadQueue.takeFirst();
     m_activeDownloads++;
-    doFetchImage(next.first, next.second, next.first);
+    doFetchImage(next.first, next.second, next.first, m_writeGeneration);
 }
 
-void CacheStore::doFetchImage(const QString &url, int retries, const QString &origUrl) {
+void CacheStore::doFetchImage(const QString &url, int retries, const QString &origUrl, uint32_t gen) {
     CurlEngine::Headers headers;
     headers.push_back({"User-Agent", MFPLAYER_USER_AGENT});
 
@@ -478,7 +481,7 @@ void CacheStore::doFetchImage(const QString &url, int retries, const QString &or
     // keyed on origUrl — `url` may differ on format=jpg retries.
     const QString hash = hashUrl(origUrl);
     QPointer<CacheStore> safeThis(this);
-    m_curl->get(url, headers, [safeThis, url, origUrl, retries, hash](const CurlResponse &r) {
+    m_curl->get(url, headers, [safeThis, url, origUrl, retries, hash, gen](const CurlResponse &r) {
         if (!safeThis) return;
 
         auto done = [safeThis, hash]() {
@@ -491,8 +494,8 @@ void CacheStore::doFetchImage(const QString &url, int retries, const QString &or
         if (r.curlResult != CURLE_OK) {
             qWarning() << "CacheStore: image download failed:" << curl_easy_strerror(r.curlResult);
             if (retries > 0) {
-                QTimer::singleShot(Constants::kImageRetryDelayMs, safeThis, [safeThis, url, origUrl, retries]() {
-                    if (safeThis) safeThis->doFetchImage(url, retries - 1, origUrl);
+                QTimer::singleShot(Constants::kImageRetryDelayMs, safeThis, [safeThis, url, origUrl, retries, gen]() {
+                    if (safeThis) safeThis->doFetchImage(url, retries - 1, origUrl, gen);
                 });
             } else {
                 safeThis->m_failedUrls[hash] = QDateTime::currentSecsSinceEpoch();
@@ -513,8 +516,8 @@ void CacheStore::doFetchImage(const QString &url, int retries, const QString &or
         if (data.isEmpty()) {
             qWarning() << "CacheStore: image download empty:" << url;
             if (retries > 0) {
-                QTimer::singleShot(Constants::kImageRetryDelayMs, safeThis, [safeThis, url, origUrl, retries]() {
-                    if (safeThis) safeThis->doFetchImage(url, retries - 1, origUrl);
+                QTimer::singleShot(Constants::kImageRetryDelayMs, safeThis, [safeThis, url, origUrl, retries, gen]() {
+                    if (safeThis) safeThis->doFetchImage(url, retries - 1, origUrl, gen);
                 });
             } else {
                 safeThis->m_failedUrls[hash] = QDateTime::currentSecsSinceEpoch();
@@ -529,8 +532,8 @@ void CacheStore::doFetchImage(const QString &url, int retries, const QString &or
         if (ct.contains("image/webp") || ct.contains("image/avif") || ct.contains("image/heif")) {
             if (retries > 0) {
                 QString newUrl = url.contains('?') ? url + "&format=jpg" : url + "?format=jpg";
-                QTimer::singleShot(Constants::kFormatRetryDelayMs, safeThis, [safeThis, newUrl, origUrl, retries]() {
-                    if (safeThis) safeThis->doFetchImage(newUrl, retries - 1, origUrl);
+                QTimer::singleShot(Constants::kFormatRetryDelayMs, safeThis, [safeThis, newUrl, origUrl, retries, gen]() {
+                    if (safeThis) safeThis->doFetchImage(newUrl, retries - 1, origUrl, gen);
                 });
                 return;  // slot + pendingDownloads entry retained — retry's completion calls done()
             }
@@ -545,7 +548,7 @@ void CacheStore::doFetchImage(const QString &url, int retries, const QString &or
         // with QImageReader::canRead() (~2ms) and QFile::write (~1ms).
         QString savePath = safeThis->imageSavePath(origUrl);
         auto dataPtr = std::make_shared<QByteArray>(std::move(data));
-        ioPool().start([safeThis, url, origUrl, hash, dataPtr, savePath, retries, done]() {
+        ioPool().start([safeThis, url, origUrl, hash, dataPtr, savePath, retries, done, gen]() {
             // Validate the downloaded data is actually a decodable image.
             // Guards against HTML error pages and truncated downloads being cached.
             {
@@ -554,12 +557,12 @@ void CacheStore::doFetchImage(const QString &url, int retries, const QString &or
                 QImageReader reader(&buf);
                 if (!reader.canRead()) {
                     qWarning() << "CacheStore: downloaded data is not a valid image:" << url;
-                    QMetaObject::invokeMethod(safeThis, [safeThis, url, origUrl, hash, retries, done]() {
+                    QMetaObject::invokeMethod(safeThis, [safeThis, url, origUrl, hash, retries, done, gen]() {
                         if (!safeThis) return;
                         if (retries > 0) {
                             QString newUrl = url.contains('?') ? url + "&format=jpg" : url + "?format=jpg";
-                            QTimer::singleShot(Constants::kFormatRetryDelayMs, safeThis, [safeThis, newUrl, origUrl, retries]() {
-                                if (safeThis) safeThis->doFetchImage(newUrl, retries - 1, origUrl);
+                            QTimer::singleShot(Constants::kFormatRetryDelayMs, safeThis, [safeThis, newUrl, origUrl, retries, gen]() {
+                                if (safeThis) safeThis->doFetchImage(newUrl, retries - 1, origUrl, gen);
                             });
                             // slot + pendingDownloads entry retained — retry's completion calls done()
                         } else {
@@ -588,8 +591,23 @@ void CacheStore::doFetchImage(const QString &url, int retries, const QString &or
             }
             dataPtr->clear();  // free downloaded bytes ASAP
 
-            QMetaObject::invokeMethod(safeThis, [safeThis, origUrl, hash, savePath, writeOk, done]() {
+            QMetaObject::invokeMethod(safeThis, [safeThis, origUrl, hash, savePath, writeOk, done, gen]() {
                 if (!safeThis) { done(); return; }
+                // 整条链唯一的闸门。飞行中的 curl、排队的重试 timer、IO 池任务都拦在这里,
+                // 不必逐个去取消 —— 那些 singleShot 本来也没句柄可取消。
+                //
+                // 不拦的话有两种坏法, 取决于这次写回落在 DBWorker 那边
+                // removeRecursively() 的哪一侧:
+                //   落在后面 → 文件+m_imageCache+SQLite 三处复活, 清了个寂寞
+                //   落在前面 → 文件被删, m_imageCache 里的条目留着 = 幽灵条目。
+                //              providerUrl() 一命中就返回路径, provider 读不到文件给张
+                //              透明图, 而且"因为命中了"永不重新下载 —— 本次运行内不自愈
+                if (gen != safeThis->m_writeGeneration) {
+                    if (writeOk)
+                        QFile::remove(savePath);  // 别在缓存目录里留下没人认领的孤儿文件
+                    done();
+                    return;
+                }
                 if (writeOk) {
                     safeThis->putImagePath(origUrl, savePath);
                     emit safeThis->imageReady(origUrl, QUrl::fromLocalFile(savePath).toString());

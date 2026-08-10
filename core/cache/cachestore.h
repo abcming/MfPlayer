@@ -63,7 +63,9 @@ private:
     void cacheItemsInMemory(const QString &parentId, const QJsonArray &items);
     // url: actual request URL (may carry format=jpg on retry);
     // origUrl: original URL used for all bookkeeping (hash, imageReady, cache key)
-    void doFetchImage(const QString &url, int retries, const QString &origUrl);
+    // gen = 发起时的 m_writeGeneration。重试链一路带着它, 写回前比对 —— 中途
+    // clearImageCache() 过的话整条链的成果一律作废 (见 .cpp 写回处)
+    void doFetchImage(const QString &url, int retries, const QString &origUrl, uint32_t gen);
     void processDownloadQueue();
 
     QSqlDatabase m_db;  // main-thread read connection
@@ -88,5 +90,10 @@ private:
     int m_activeDownloads = 0;
     QList<QPair<QString, int>> m_downloadQueue;
     static const int kMaxActiveDownloads = 8;
-    uint32_t m_writeGeneration = 0;  // incremented by clearContentCache to cancel deferred writes
+    // 清缓存时 ++。**它不是靠 DBWorker 生效的** —— 那边五个 generation 形参全是
+    // Q_UNUSED, 而且本来也不需要: 投递是 Qt::QueuedConnection, DBWorker 串行处理,
+    // clear 之前投递的写入必定在 DELETE 之前执行, 一律会被扫掉。
+    // 真正需要它的只有图片下载那条异步链 (下载→IO 池→回主线程写回), 那条链跨得过
+    // clear, 闸门在 doFetchImage() 的写回处比对本值。
+    uint32_t m_writeGeneration = 0;
 };
