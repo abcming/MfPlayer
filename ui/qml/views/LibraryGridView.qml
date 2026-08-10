@@ -212,6 +212,8 @@ GridView {
         required property bool isFavorite
         required property bool played
         required property string seriesName
+        required property int indexNumber            // 播放钮拼「第 N 集」用
+        required property var playbackPositionTicks  // 播放钮续播位置用
 
         width: grid.cellWidth - 10
         height: grid.cellHeight - 10
@@ -245,6 +247,20 @@ GridView {
                 lazyLoad: true
                 externalHover: _h.hovered
                 embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
+
+                // 封面正中的播放钮 —— 只给「集」Tab (6)。电影/剧集海报点进去是详情页,
+                // 那里才有版本/音轨/字幕可选; 单集没这些选择, 直接播才省事
+                CardPlayButton {
+                    visible: _h.hovered && Library.currentTab === 6
+                    onClicked: Nav.playCard({
+                        itemId: itemId,
+                        itemName: itemName,
+                        itemType: itemType,
+                        seriesName: seriesName,
+                        indexNumber: indexNumber,
+                        startTicks: playbackPositionTicks || 0
+                    })
+                }
             }
             Label {
                 text: grid.landscapeMode ? (seriesName || itemName || "?") : (itemName || "?")

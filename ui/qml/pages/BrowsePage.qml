@@ -180,6 +180,19 @@ HdrPqOverlay {
                         }
                     }
 
+                    // 封面正中的播放钮 —— 点了直接起播, 不用先进详情页
+                    CardPlayButton {
+                        visible: _resumeHover.hovered
+                        onClicked: Nav.playCard({
+                            itemId: itemId,
+                            itemName: itemName,
+                            itemType: itemType,
+                            seriesName: seriesName,
+                            indexNumber: indexNumber,
+                            startTicks: playbackPositionTicks || 0
+                        })
+                    }
+
                     // Action buttons (top-right corner)
                     Row {
                         anchors { top: parent.top; right: parent.right; margins: 6 }
