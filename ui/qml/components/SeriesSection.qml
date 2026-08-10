@@ -179,7 +179,8 @@ ColumnLayout {
     ListView {
         id: episodeListView
         Layout.fillWidth: true
-        Layout.preferredHeight: 200
+        // 196(卡片) + 20(留白/滚动条余量)。卡片: 6*2 边距 + 135 图 + 4 间距 + 两行 12px 文字
+        Layout.preferredHeight: 216
         model: Detail.episodeModel
         orientation: ListView.Horizontal
         clip: true
@@ -193,7 +194,7 @@ ColumnLayout {
             required property string itemId
 
             width: 240
-            height: 180
+            height: 196   // 从 180 加高: 标题现在最多两行, 原来的 29px 只够一行
             radius: 6
             color: "transparent"
 
@@ -213,6 +214,10 @@ ColumnLayout {
                 }
 
                 RowLayout {
+                    // Column 不是 Layout, 不给子项分配宽度 —— 不写这行, RowLayout 会被
+                    // 内容撑成无限宽, 里面的 Layout.fillWidth 就填了个无限值,
+                    // maximumLineCount / wrapMode 全部失效, 标题直接溢出压到隔壁卡片
+                    width: parent.width
                     spacing: 6
                     Label {
                         text: "E" + (indexNumber || "")
@@ -226,7 +231,11 @@ ColumnLayout {
                         font.pixelSize: 12
                         Layout.fillWidth: true
                         maximumLineCount: 2
-                        wrapMode: Text.WordWrap
+                        // Wrap 而不是 WordWrap: 剧集名常常是整串文件名
+                        // ("....2026.S01E02.2160p.WEB-DL..."), 里面没有空格,
+                        // WordWrap 找不到断点就一行到底
+                        wrapMode: Text.Wrap
+                        elide: Text.ElideRight   // 超过两行给个省略号, 别硬裁
                     }
                 }
             }

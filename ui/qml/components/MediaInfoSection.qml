@@ -132,6 +132,7 @@ Column {
                 spacing: 6
 
                 RowLayout {
+                    width: parent.width   // 同下: Column 不给子项分宽
                     Label {
                         text: cardType === "Video" ? Str.tabVideo : (cardType === "Audio" ? Str.tabAudio : Str.tabSubtitle)
                         color: Theme.primary
@@ -151,6 +152,8 @@ Column {
                 }
 
                 Column {
+                    // 这一层原来也没宽度, 于是内层 RowLayout 只能被内容撑开
+                    width: parent.width
                     spacing: 2
 
                     Repeater {
@@ -161,6 +164,9 @@ Column {
                         }
                         RowLayout {
                             required property var modelData
+                            // Column 不是 Layout, 不写这行就会被内容撑成无限宽,
+                            // Layout.fillWidth 填了个无限值 → 值再长也不省略, 直接溢出卡片
+                            width: parent.width
                             spacing: 6
                             Label {
                                 text: modelData.k; color: Theme.textSecondary; font.pixelSize: 10
@@ -168,6 +174,8 @@ Column {
                             Label {
                                 text: modelData.v; color: Theme.textMuted; font.pixelSize: 10
                                 Layout.fillWidth: true
+                                elide: Text.ElideRight   // 值保持一行, 太长就省略, 不撑高卡片
+                                horizontalAlignment: Text.AlignRight
                             }
                         }
                     }

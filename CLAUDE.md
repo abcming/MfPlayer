@@ -251,6 +251,14 @@ cmake --build /root/myproject/mfplayer/build
 - 改 CurlEngine → 它被 EmbyClient 和 CacheStore 各持一个实例, 两者用法相同但独立
 - **改 DBWorker** → 它运行在独立线程, 只通过 QueuedConnection 与主线程通信。不要从主线程直接访问它的 QSqlDatabase
 - **改用 I/O Pool** → 文件 I/O 操作通过 `ioPool().start()` 提交。回调必须用 QPointer 守卫 + QueuedConnection
+- **`RowLayout` / `ColumnLayout` 放进 `Column` / `Row` / `Item` 时必须自己写 `width:`** →
+  那三个不是 Layout，不给子项分配宽度。不写的话 Layout 会被内容撑成无限宽，里面的
+  `Layout.fillWidth: true` 就填了个无限值，**`elide` / `wrapMode` / `maximumLineCount`
+  全部静默失效**，长文本直接溢出压到隔壁。
+  症状是"设了省略号却不省略"。判据: Layout 无 `width`/`anchors` **且**内部有 `fillWidth`。
+  （父本身是 Layout 时不用管，用 `Layout.fillWidth` 就行。）
+- **文件名类文本用 `Text.Wrap` 不用 `Text.WordWrap`** → 剧集名常常是整串文件名
+  (`xxx.2026.S01E02.2160p.WEB-DL.H265`)，里面没空格，WordWrap 找不到断点就一行到底
 - **性能红线 — 不要回退以下优化**:
   - VideoRenderNode（D3D11/OpenGL）: OpenGL FBO 跨帧缓存，mpv 无新帧时只跳过 mpv render、缓存内容照常 blit。别改回每帧 gen/delete；也别在 render() 里提前 return 跳过 blit——Qt 每帧清屏重画，少 blit 一次视频区就黑一帧（2026-07 闪屏 bug 根因）
   - **Vulkan 路径架构（2026-07 第四轮定稿，前三轮全部翻车的教训都在这里）**：
