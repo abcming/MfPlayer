@@ -177,7 +177,7 @@ Column {
                                 Layout.fillWidth: true
                                 // 值紧跟在 key 后面 (中间只隔一个 spacing), 过长就换行。
                                 // 别加 horizontalAlignment: AlignRight —— 那会变成两边对齐,
-                                // 封铭要的是原来这种左对齐的样子
+                                // 要的是原来这种左对齐的样子
                                 wrapMode: Text.Wrap
                             }
                         }

@@ -79,7 +79,7 @@ int main(int argc, char *argv[]) {
 
     // 文字渲染保持 Qt 默认。2026-07 试过 CurveTextRendering (无 hinting,
     // 12px CJK 发糊) 和 NativeTextRendering+NoSubpixelAntialias (灰度 AA
-    // 观感发虚), 都不如默认清楚 — 封铭实测拍板: 要锐度, 残余的一点点
+    // 观感发虚), 都不如默认清楚 — 实测拍板: 要锐度, 残余的一点点
     // 子像素红边可以接受 (大面积偏红的真凶是 shader 的 premultiply 数学,
     // 已在 hdr_pq.frag 修复)。别再动这里。
     QGuiApplication app(argc, argv);

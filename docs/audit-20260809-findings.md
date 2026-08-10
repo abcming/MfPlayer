@@ -88,7 +88,7 @@ A 在这个窗口内自然 EOF → `reportStopForCurrent()` 用
 概率低但真实，后果是"看完了但进度没记住"。
 
 ### A-3 · OpenGL 离屏 FBO 从未绑定就附加纹理
-- **状态**：`已核实` · **处置**：**不修** — 只影响 OpenGL 后端。封铭：默认是自动，同学也不会去动图形 API 设置 — 实锤
+- **状态**：`已核实` · **处置**：**不修** — 只影响 OpenGL 后端。实际使用中默认是自动，同学也不会去动图形 API 设置 — 实锤
 - **老王定级**：中 · **核实后**：中（仅 OpenGL 后端）
 - **来源**：单 1
 - **位置**：`platform/rendering/mpv/mpvrenderitem.cpp:493-501`
@@ -265,7 +265,7 @@ t=710   销毁
 ---
 
 ## C-1 · `clearImageCache()` 清不干净，残留下载会把缓存写回来
-- **状态**：`已修` — 2026-08-10，`741ddc9`（编译 + 封铭实机验证通过）
+- **状态**：`已修` — 2026-08-10，`741ddc9`（编译 + 实机验证通过）
 - **修法**：不逐个取消，在整条异步链唯一的汇合点（IO 池写完回主线程那步）设一道闸 ——
   `doFetchImage()` 带上发起时的 `m_writeGeneration`，重试链一路传递，写回前比对；
   过期就 `QFile::remove(savePath)` 免得留孤儿文件。外加 `m_downloadQueue.clear()`。
@@ -343,7 +343,7 @@ if (items.size() == m_lastSourceSize
 
 ## E-4 · 「文件夹」Tab 里点文件夹，列表跳回顶部，然后什么都不发生
 - **状态**：`已修` — 2026-08-10，`64fc69c`（删掉整个 Tab）
-- **决定**：封铭 —— 当初照着 Emby Web 加的，实际用处不大。接目录下钻不值当，直接摘掉 · **老王定级**：中 · **核实后**：中
+- **决定**：当初照着 Emby Web 加的，实际用处不大。接目录下钻不值当，直接摘掉 · **老王定级**：中 · **核实后**：中
 - **位置**：`ui/qml/views/LibraryGridView.qml:221-228`、`core/detail/detailmanager.cpp:127`、`core/library/librarybrowser.cpp:249`
 
 ```qml
@@ -446,7 +446,7 @@ Id / Name / RunTimeTicks 的壳。
 （"episodes played from a series page"）。这不是边角情况，是日常操作。
 
 ### B-3 · 外挂字幕 `sub-add` 还在排队，就去 track-list 里模糊匹配
-- **状态**：`已核实` · **处置**：**不修** — 封铭：外挂字幕一般都有名字，模糊匹配用不上。改法要动 tracksChanged 时序，风险大于收益 · **老王定级**：低 · **核实后**：低
+- **状态**：`已核实` · **处置**：**不修** — 外挂字幕一般都有名字，模糊匹配用不上。改法要动 tracksChanged 时序，风险大于收益 · **老王定级**：低 · **核实后**：低
 - **位置**：`core/playback/playbackcontroller.cpp:58`、`:93`、`:501`、`platform/rendering/mpv/mpvcontroller.cpp:493`
 
 `fileLoaded` 的槽里先循环 `addSubtitleFile()` 把所有外挂字幕加进去，
