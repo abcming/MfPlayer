@@ -1,7 +1,7 @@
 # MfPlayer 全仓库审计 — 2026-08-09
 
 四单只读审计（codex / blueprint 流程），分区互不重叠，每单自行选取维度。
-共 **26 条** finding。**已核实 10 条，剩 16 条待核实**（2026-08-10）。
+共 **26 条** finding。**已核实 10 条（其中 A-1、E-2 已修），剩 16 条待核实**（2026-08-10）。
 
 ## 怎么用这个文档
 
@@ -25,7 +25,13 @@
 ## 已核实（10 条）
 
 ### A-1 · ImageProvider 在 reader 线程无保护读取 `m_imageCache`
-- **状态**：`已核实` — 实锤
+- **状态**：`已修` — 2026-08-10，`b5a599d`
+- **修法**：把主线程解析好的路径随 provider URL 带走
+  （`image://imgcache/<md5>/<base64url(路径)>`），provider 不再持有也不访问 CacheStore。
+  **不是加锁** —— 详见 commit message 与 CLAUDE.md 的红线条目。
+  方案对比由 `/codex:adversarial-review` 产出（Codex session `019fe8ac`），
+  其五条关键事实经逐行核实全部成立；第四方案由它提出，人工审收后采纳并补了
+  两条：LRU 键与携带路径分离、provider 路径硬收口在缓存目录内。
 - **老王定级**：高 · **核实后**：高
 - **来源**：单 2
 - **位置**：`core/cache/imagecacheprovider.cpp:121`、`core/cache/cachestore.cpp:343`
@@ -292,7 +298,7 @@ t=710   销毁
 
 ## 建议的下一步顺序
 
-1. **A-1** — 唯一的高危，而且要重做一个既定决策。先想清楚方案再动手，别直接加锁。
+1. ~~**A-1**~~ — 已修 (`b5a599d`)。
 2. **E-2** — 一行的事（`switchEpisode` 的 Emby 分支补 `itemData = null`），收益却是"版本菜单不再指向错误的媒体源"。性价比最高，先修这个。
 3. **D-3** — 修法明确：`if (!r.ok()) return;`。但要连带决定 `networkError` 接不接（现在是死信号）。
 4. **D-2** — 污染写进 SQLite 且会自我放大一次，四条 D 里危害最实。
