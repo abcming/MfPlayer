@@ -70,15 +70,6 @@ LibraryBrowser::LibraryBrowser(EmbyClient *emby, CacheStore *cache, QObject *par
         m_suggestionsLatestModel->setItems(items);
     });
 
-    connect(m_emby, &EmbyClient::personsFetched, this, [this](const QJsonArray &items) {
-        if (m_fetchingFavPersons) {
-            m_fetchingFavPersons = false;
-            m_favPeopleModel->setItems(items);
-        } else if (m_fetchingSearchPersons) {
-            m_fetchingSearchPersons = false;
-            m_searchPeopleModel->setItems(items);
-        }
-    });
 
     connect(m_emby, &EmbyClient::favoriteChanged, this, [this](const QString &itemId, bool isFavorite) {
         updateCardField(itemId, "isFavorite", isFavorite);
@@ -409,13 +400,18 @@ void LibraryBrowser::fetchFavorites(const QString &libraryId) {
         [this](const QJsonArray &items) { m_favSeriesModel->setItems(items); });
     m_emby->fetchItemsFiltered({.parentId = libraryId, .includeTypes = Constants::kTypeEpisode, .filters = "IsFavorite", .limit = 50},
         [this](const QJsonArray &items) { m_favEpisodesModel->setItems(items); });
-    m_fetchingFavPersons = true;
-    m_emby->fetchFavPersons(50);
+    m_emby->fetchFavPersons(50, [this](const QJsonArray &items) {
+        m_favPeopleModel->setItems(items);
+    });
 }
 
 void LibraryBrowser::search(const QString &term) {
     if (term.length() < 2) {
         m_searchDebounceTimer->stop();
+        // 停 timer 只能拦住"还没发出去"的。已经在飞的请求要靠 ++gen 作废 ——
+        // 否则输入"钢铁侠"发出请求、删到"钢"清空模型, 旧结果回来照样 setItems,
+        // 搜索框空着列表却有内容
+        ++m_searchGeneration;
         m_searchMoviesModel->clear();
         m_searchSeriesModel->clear();
         m_searchPeopleModel->clear();
@@ -427,17 +423,23 @@ void LibraryBrowser::search(const QString &term) {
 
 void LibraryBrowser::executeSearch(const QString &term) {
     if (term.length() < 2) return;
+    // 每次新搜索都作废上一次在飞的三个请求, 不然连续输入时先后顺序不保证
+    uint32_t gen = ++m_searchGeneration;
     m_searchMoviesModel->clear();
     m_searchSeriesModel->clear();
     m_searchPeopleModel->clear();
-    m_emby->searchItems(term, Constants::kTypeMovie, 20, [this](const QJsonArray &items) {
+    m_emby->searchItems(term, Constants::kTypeMovie, 20, [this, gen](const QJsonArray &items) {
+        if (gen != m_searchGeneration) return;
         m_searchMoviesModel->setItems(items);
     });
-    m_emby->searchItems(term, Constants::kTypeSeries, 20, [this](const QJsonArray &items) {
+    m_emby->searchItems(term, Constants::kTypeSeries, 20, [this, gen](const QJsonArray &items) {
+        if (gen != m_searchGeneration) return;
         m_searchSeriesModel->setItems(items);
     });
-    m_fetchingSearchPersons = true;
-    m_emby->searchPersons(term, 20);
+    m_emby->searchPersons(term, 20, [this, gen](const QJsonArray &items) {
+        if (gen != m_searchGeneration) return;
+        m_searchPeopleModel->setItems(items);
+    });
 }
 
 void LibraryBrowser::fetchRecommendations() {

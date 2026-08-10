@@ -132,9 +132,11 @@ public slots:
     Q_INVOKABLE void hideFromResume(const QString &itemId);
 
     // Persons list
-    Q_INVOKABLE void fetchPersons(const QString &parentId, int limit = 30);
-    Q_INVOKABLE void fetchFavPersons(int limit = 50);
-    Q_INVOKABLE void searchPersons(const QString &term, int limit = 20);
+    // 三个都是回调式 —— 原来共用一个 personsFetched 信号, 收藏页和搜索同时在飞时
+    // 先回来的那个会被判给错误的分支 (见 audit D-6)。回调天然带请求身份, 不会串
+    void fetchPersons(const QString &parentId, int limit, JsonArrayCallback callback);
+    void fetchFavPersons(int limit, JsonArrayCallback callback);
+    void searchPersons(const QString &term, int limit, JsonArrayCallback callback);
     void searchItems(const QString &term, const QString &includeTypes, int limit,
                      JsonArrayCallback callback, const QString &sortBy = "SortName");
 
@@ -188,7 +190,6 @@ signals:
     void personMoviesFetched(const QJsonArray &items, const QString &personId);
     void personSeriesFetched(const QJsonArray &items, const QString &personId);
     void hideFromResumeSuccess(const QString &itemId);
-    void personsFetched(const QJsonArray &items);
     void tagsFetched(const QJsonArray &items);
     void yearsFetched(const QJsonArray &items);
     void officialRatingsFetched(const QJsonArray &items);

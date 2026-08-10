@@ -781,7 +781,7 @@ void EmbyClient::hideFromResume(const QString &itemId) {
 
 // ── Persons ──
 
-void EmbyClient::fetchPersons(const QString &parentId, int limit) {
+void EmbyClient::fetchPersons(const QString &parentId, int limit, JsonArrayCallback callback) {
     QUrlQuery query;
     query.addQueryItem("UserId", m_userId);
     query.addQueryItem("Recursive", "true");
@@ -793,12 +793,12 @@ void EmbyClient::fetchPersons(const QString &parentId, int limit) {
     if (!parentId.isEmpty())
         query.addQueryItem("ParentId", parentId);
 
-    getJson("/emby/Persons", query, [this](const QJsonDocument &doc) {
-        emit personsFetched(doc.object()["Items"].toArray());
+    getJson("/emby/Persons", query, [callback](const QJsonDocument &doc) {
+        callback(doc.object()["Items"].toArray());
     });
 }
 
-void EmbyClient::fetchFavPersons(int limit) {
+void EmbyClient::fetchFavPersons(int limit, JsonArrayCallback callback) {
     QUrlQuery query;
     query.addQueryItem("UserId", m_userId);
     query.addQueryItem("Filters", "IsFavorite");
@@ -807,12 +807,12 @@ void EmbyClient::fetchFavPersons(int limit) {
     query.addQueryItem("ImageTypeLimit", "1");
     query.addQueryItem("SortBy", "SortName");
     query.addQueryItem("SortOrder", "Ascending");
-    getJson("/emby/Persons", query, [this](const QJsonDocument &doc) {
-        emit personsFetched(doc.object()["Items"].toArray());
+    getJson("/emby/Persons", query, [callback](const QJsonDocument &doc) {
+        callback(doc.object()["Items"].toArray());
     });
 }
 
-void EmbyClient::searchPersons(const QString &term, int limit) {
+void EmbyClient::searchPersons(const QString &term, int limit, JsonArrayCallback callback) {
     QUrlQuery query;
     query.addQueryItem("UserId", m_userId);
     query.addQueryItem("SearchTerm", term);
@@ -821,8 +821,8 @@ void EmbyClient::searchPersons(const QString &term, int limit) {
     query.addQueryItem("ImageTypeLimit", "1");
     query.addQueryItem("SortBy", "SortName");
     query.addQueryItem("SortOrder", "Ascending");
-    getJson("/emby/Persons", query, [this](const QJsonDocument &doc) {
-        emit personsFetched(doc.object()["Items"].toArray());
+    getJson("/emby/Persons", query, [callback](const QJsonDocument &doc) {
+        callback(doc.object()["Items"].toArray());
     });
 }
 

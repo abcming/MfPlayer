@@ -165,17 +165,18 @@ private:
     MediaModel *m_favSeriesModel;
     MediaModel *m_favEpisodesModel;
     MediaModel *m_favPeopleModel;
-    bool m_fetchingFavPersons = false;
     MediaModel *m_searchMoviesModel;
     MediaModel *m_searchSeriesModel;
     MediaModel *m_searchEpisodesModel;
     MediaModel *m_searchPeopleModel;
     MediaModel *m_recommendModel;
-    bool m_fetchingSearchPersons = false;
     int m_sortBy = 0;
     bool m_sortAscending = true;
     bool m_filterFavorites = false;
     int m_filterPlayed = 0; // 0=all, 1=played, 2=unplayed
     QTimer *m_searchDebounceTimer;
     QString m_pendingSearchTerm;
+    // 每次新搜索 / 搜索词缩短到 2 字以下时 ++, 让在飞的搜索请求作废。
+    // 停 debounce timer 只拦得住还没发出去的那些
+    uint32_t m_searchGeneration = 0;
 };
