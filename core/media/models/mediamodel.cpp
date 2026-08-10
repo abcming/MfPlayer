@@ -271,6 +271,20 @@ MediaModel::Item MediaModel::fromJson(const QJsonObject &obj) {
             item.imageUrl = QString("/emby/Items/%1/Images/%2?tag=%3&maxWidth=360&quality=80").arg(item.id, imageType, imageTag);
     }
 
+    // 集自己没有缩略图时回落到**剧集的 backdrop** —— 横版, 跟集缩略图同比例。
+    // (别回落到剧集海报: 那是竖版, 塞进 16:9 的卡片会被裁得只剩中间一条)
+    // 详情页的剧集列表有自己的 fallback (SeriesSection 手上有整个 Series 的
+    // itemData), 卡片只有这一集的数据, 够不着 —— 所以只有卡片这条路会空着
+    if (item.imageUrl.isEmpty() && !item.seriesId.isEmpty()) {
+        const auto parentBd = obj["ParentBackdropImageTags"].toArray();
+        if (!parentBd.isEmpty()) {
+            QString owner = obj["ParentBackdropItemId"].toString();
+            if (owner.isEmpty()) owner = item.seriesId;
+            item.imageUrl = QString("/emby/Items/%1/Images/Backdrop/0?tag=%2&maxWidth=600&quality=80")
+                                .arg(owner, parentBd.first().toString());
+        }
+    }
+
     // Always extract backdrop URL for resume cards etc. (bdTags already parsed above)
     if (!bdTags.isEmpty())
         item.backdropUrl = QString("/emby/Items/%1/Images/Backdrop/0?tag=%2").arg(item.id, bdTags.first().toString());
