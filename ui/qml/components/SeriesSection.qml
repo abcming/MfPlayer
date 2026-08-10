@@ -15,7 +15,8 @@ ColumnLayout {
 
     Connections {
         target: Detail
-        function onSeasonsChanged() {
+        function onSeasonsChanged(seriesId) {
+            if (seriesId !== root.itemId) return
             root._seasonVersion++
         }
     }

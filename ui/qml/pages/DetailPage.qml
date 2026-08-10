@@ -125,8 +125,12 @@ HdrPqOverlay {
 
     Connections {
         target: Detail
-        function onSeasonsChanged() {
-            if (!detailRoot.itemData || detailRoot.itemData.Id !== detailRoot.itemId) return
+        function onSeasonsChanged(seriesId) {
+            // 判的是**事件归属**, 不是自己内部一致。seasonsChanged 是广播, 留在
+            // StackView 里的后台详情页也会收到 —— 原来那句
+            // `itemData.Id !== itemId` 验的是"我的数据配不配我的 id",
+            // 后台页当然配得上, 于是打开别的剧集就会把它选好的季重置掉
+            if (seriesId !== detailRoot.itemId) return
             if (detailRoot._skipSeasonReset) {
                 detailRoot._skipSeasonReset = false
                 return

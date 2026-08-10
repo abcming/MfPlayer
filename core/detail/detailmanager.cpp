@@ -183,7 +183,7 @@ void DetailManager::fetchSeasons(const QString &seriesId) {
     if (!cached.isEmpty()) {
         cached = sortByIndexNumber(cached);
         m_seasonModel->setItems(cached);
-        emit seasonsChanged();
+        emit seasonsChanged(seriesId);
         // Preserve m_currentSeasonId if it still exists in the season list
         QString targetId;
         for (const auto &s : cached) {
@@ -262,7 +262,7 @@ void DetailManager::onSeasonsFetched(const QJsonArray &seasons, const QString &s
     QJsonArray sorted = sortByIndexNumber(seasons);
     m_cache->putSeasons(seriesId, sorted);
     m_seasonModel->setItems(sorted);
-    emit seasonsChanged();
+    emit seasonsChanged(seriesId);
     if (!sorted.isEmpty()) {
         m_currentSeasonId = sorted.first().toObject()["Id"].toString();
         m_emby->fetchEpisodes(seriesId, m_currentSeasonId);

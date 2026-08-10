@@ -43,7 +43,9 @@ public slots:
 
 signals:
     void itemDetailReady(const QString &itemId, const QVariantMap &data);
-    void seasonsChanged();
+    // 带上 seriesId: 这是个广播信号, 留在 StackView 里的后台详情页也会收到,
+    // 它们必须能判断这批季是不是自己那部剧的 (见 audit E-1)
+    void seasonsChanged(const QString &seriesId);
     void nextEpisodeChanged();
     void playedStatusChanged(const QString &itemId, bool played);
     void favoriteChanged(const QString &itemId, bool isFavorite);
