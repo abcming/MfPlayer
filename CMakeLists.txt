@@ -8,7 +8,15 @@ if(NOT CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
     endif()
 endif()
 
-project(MfPlayer VERSION 0.1.0 LANGUAGES CXX)
+file(STRINGS "${CMAKE_SOURCE_DIR}/VERSION.txt" MFPLAYER_VERSION LIMIT_COUNT 1)
+string(STRIP "${MFPLAYER_VERSION}" MFPLAYER_VERSION)
+project(MfPlayer VERSION ${MFPLAYER_VERSION} LANGUAGES CXX)
+
+configure_file(
+    "${CMAKE_SOURCE_DIR}/common/version.h.in"
+    "${CMAKE_BINARY_DIR}/generated/common/version.h"
+    @ONLY
+)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -96,14 +104,24 @@ set(ICON_NAMES arrow_back check chevron_right close fullscreen fullscreen_exit
 set(GENERATED_ICON_QMLS "")
 set(SVGTOQML_SCRIPT "${CMAKE_SOURCE_DIR}/tools/svg_to_icon_qml.sh")
 set(QT6_BIN_DIR "${Qt6_DIR}/../../../bin")
+if(WIN32)
+    set(SVGTOQML_BASH "$ENV{ProgramFiles}/Git/bin/bash.exe")
+    if(NOT EXISTS "${SVGTOQML_BASH}")
+        message(FATAL_ERROR "Git Bash not found at ${SVGTOQML_BASH}")
+    endif()
+    set(SVGTOQML_PATH "${QT6_BIN_DIR};$ENV{PATH}")
+else()
+    find_program(SVGTOQML_BASH bash REQUIRED)
+    set(SVGTOQML_PATH "${QT6_BIN_DIR}:$ENV{PATH}")
+endif()
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated_icons")
 
 foreach(name ${ICON_NAMES})
     set(qml_out "${CMAKE_BINARY_DIR}/generated_icons/MFIcon_${name}.qml")
     add_custom_command(
         OUTPUT "${qml_out}"
-        COMMAND ${CMAKE_COMMAND} -E env "PATH=${QT6_BIN_DIR}:$ENV{PATH}"
-                bash "${SVGTOQML_SCRIPT}"
+        COMMAND ${CMAKE_COMMAND} -E env "PATH=${SVGTOQML_PATH}"
+                "${SVGTOQML_BASH}" "${SVGTOQML_SCRIPT}"
                 "${CMAKE_SOURCE_DIR}/resources/icons/${name}.svg"
                 "${qml_out}"
         DEPENDS "${CMAKE_SOURCE_DIR}/resources/icons/${name}.svg"
@@ -161,7 +179,10 @@ qt6_add_shaders(mfplayer_app "mfplayer-shaders"
         ui/qml/shaders/hdr_pq.frag
 )
 
-target_include_directories(mfplayer_app PRIVATE ${CMAKE_SOURCE_DIR})
+target_include_directories(mfplayer_app PRIVATE
+    "${CMAKE_BINARY_DIR}/generated"
+    ${CMAKE_SOURCE_DIR}
+)
 
 if(NOT MSVC)
     target_compile_options(mfplayer_app PRIVATE -Wall -Wextra)
@@ -211,21 +232,39 @@ set_target_properties(mfplayer_app PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
+file(GLOB FONT_FILES CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/resources/fonts/*.ttc"
+    "${CMAKE_SOURCE_DIR}/resources/fonts/*.ttf"
+    "${CMAKE_SOURCE_DIR}/resources/fonts/*.otf"
+)
 add_custom_command(TARGET mfplayer_app POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${CMAKE_SOURCE_DIR}/resources/fonts"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
     "$<TARGET_FILE_DIR:mfplayer_app>/fonts"
 )
+foreach(font ${FONT_FILES})
+    add_custom_command(TARGET mfplayer_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${font}"
+        "$<TARGET_FILE_DIR:mfplayer_app>/fonts"
+    )
+endforeach()
 
 # Copy mpv + vcpkg runtime DLLs to build output (runs at build time, not configure time)
 if(WIN32)
+    file(GLOB MPV_DEP_DLLS CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/third_party/mpv-msvc/lib/deps/*.dll"
+    )
     add_custom_command(TARGET mfplayer_app POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/third_party/mpv-msvc/bin/mpv-2.dll"
         "$<TARGET_FILE_DIR:mfplayer_app>/mpv-2.dll"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/third_party/mpv-msvc/lib/deps"
-        "$<TARGET_FILE_DIR:mfplayer_app>"
         COMMENT "Deploying mpv + dependency DLLs"
     )
+    foreach(mpv_dep ${MPV_DEP_DLLS})
+        add_custom_command(TARGET mfplayer_app POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${mpv_dep}"
+            "$<TARGET_FILE_DIR:mfplayer_app>"
+        )
+    endforeach()
 endif()

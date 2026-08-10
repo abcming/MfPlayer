@@ -1,12 +1,19 @@
 # build_mpv_msvc.ps1 - Build libmpv with MSVC via vcpkg dependencies
 # Run from: Developer PowerShell for VS 2022 (or equivalent MSVC environment)
-# Usage: .\tools\build_mpv_msvc.ps1
+# Usage: .\tools\build_mpv_msvc.ps1 [-Clean]
+
+param(
+    [switch]$Clean
+)
 
 $ErrorActionPreference = "Stop"
 $env:VCPKG_MAX_CONCURRENCY = [Environment]::ProcessorCount
+$ScriptDir = Split-Path -Parent $PSCommandPath
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $VcpkgRoot = $env:VCPKG_ROOT
 if (-not $VcpkgRoot) { $VcpkgRoot = "D:/vcpkg" }
+$MpvManifestDir = "$ScriptDir/mpv"
+$VcpkgInstallRoot = "$ProjectRoot/build/mpv-vcpkg_installed"
 $MpvSource = "$ProjectRoot/third_party/mpv-source"
 $BuildDir = "$MpvSource/build_msvc"
 $InstallDir = "$ProjectRoot/third_party/mpv-msvc"
@@ -20,13 +27,13 @@ Write-Host "MPV source:   $MpvSource"
 # Step 1: Install vcpkg dependencies
 Write-Host "`n=== Step 1: Installing vcpkg dependencies ===" -ForegroundColor Yellow
 Push-Location $ProjectRoot
-& "$VcpkgRoot/vcpkg" install --triplet x64-windows
+& "$VcpkgRoot/vcpkg" install --triplet x64-windows "--x-manifest-root=$MpvManifestDir" "--x-install-root=$VcpkgInstallRoot"
 if ($LASTEXITCODE -ne 0) { Write-Error "vcpkg install failed"; exit 1 }
 Pop-Location
 
 # Ensure pkg-config is available for meson
-# vcpkg manifest mode installs to vcpkg_installed/ in the project root
-$VcpkgInstalled = "$ProjectRoot/vcpkg_installed/x64-windows"
+# Keep mpv's heavy dependency set separate from the app's vcpkg install tree.
+$VcpkgInstalled = "$VcpkgInstallRoot/x64-windows"
 $PkgConfigDir = "$VcpkgInstalled/lib/pkgconfig"
 $env:PKG_CONFIG_PATH = $PkgConfigDir
 $PkgConfBin = "$VcpkgInstalled/tools/pkgconf/pkgconf.exe"
@@ -81,9 +88,20 @@ if (-not (Test-Path $PlaceboPc)) {
 
 # Step 3: Configure meson
 Write-Host "`n=== Step 3: Configuring meson ===" -ForegroundColor Yellow
-if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
-# meson on Python 3.15 needs meson-info/ to exist before writing introspection
-New-Item -ItemType Directory -Path "$BuildDir/meson-info" -Force | Out-Null
+if ($Clean -and (Test-Path $BuildDir)) {
+    Write-Host "Cleaning $BuildDir"
+    Remove-Item -Recurse -Force $BuildDir
+}
+
+$MesonConfigured = Test-Path "$BuildDir/meson-private/coredata.dat"
+if ((Test-Path $BuildDir) -and -not $MesonConfigured) {
+    Write-Host "Removing incomplete Meson build directory: $BuildDir" -ForegroundColor Yellow
+    Remove-Item -Recurse -Force $BuildDir
+}
+if (-not $MesonConfigured) {
+    # meson on Python 3.15 needs meson-info/ to exist before writing introspection
+    New-Item -ItemType Directory -Path "$BuildDir/meson-info" -Force | Out-Null
+}
 
 # Python 3.15 chokes on MSVC's non-UTF-8 output during compiler detection
 # in Developer PowerShell. Tell Python to replace undecodable bytes.
@@ -106,6 +124,7 @@ $MesonArgs = @(
     "-Dlua=enabled",
     "-Dlibavdevice=enabled"
 )
+if ($MesonConfigured) { $MesonArgs += "--reconfigure" }
 
 & meson @MesonArgs $MpvSource
 if ($LASTEXITCODE -ne 0) {

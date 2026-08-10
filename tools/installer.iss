@@ -1,9 +1,11 @@
 ; MfPlayer Inno Setup installer script
 ; Prerequisites: run tools\package.ps1 first to create deploy\MfPlayer\
-; Then compile this with Inno Setup Compiler (ISCC.exe)
+; tools\package.ps1 passes MyAppVersion from the root VERSION.txt file.
 
 #define MyAppName "MfPlayer"
-#define MyAppVersion "1.0"
+#ifndef MyAppVersion
+  #error MyAppVersion must be provided by tools\package.ps1
+#endif
 #define MyAppPublisher "abcming"
 #define MyAppURL "https://github.com/abcming/MfPlayer"
 #define MyAppExeName "MfPlayer.exe"

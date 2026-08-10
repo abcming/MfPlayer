@@ -6,8 +6,14 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Resolve-Path "$ScriptDir\.."
-$BuildDir = "$ProjectDir\build"
+$BuildDir = "$ProjectDir\build\release"
 $DeployDir = "$ProjectDir\deploy\MfPlayer"
+$AppVersion = (Get-Content "$ProjectDir\VERSION.txt" -TotalCount 1).Trim()
+
+if ($AppVersion -notmatch '^\d+\.\d+\.\d+$') {
+    Write-Error "Invalid application version in $ProjectDir\VERSION.txt: $AppVersion"
+    exit 1
+}
 
 # ── Pre-flight checks ──
 $Exe = "$BuildDir\MfPlayer.exe"
@@ -56,6 +62,7 @@ if ($Windeployqt -is [string]) {
 }
 
 Write-Host "=== Packaging MfPlayer (MSVC) ===" -ForegroundColor Cyan
+Write-Host "Version: $AppVersion"
 
 # Qt root = bin/.. (e.g. C:\Qt\6.11.0\msvc2022_64)
 $QtRoot = Split-Path -Parent (Split-Path -Parent $WindeployqtPath)
@@ -67,11 +74,18 @@ New-Item -ItemType Directory -Force $DeployDir | Out-Null
 
 # ── Copy exe ──
 Copy-Item $Exe $DeployDir
-Write-Host "[1/6] MfPlayer.exe"
+Write-Host "[1/7] MfPlayer.exe"
 
 # ── windeployqt6 ──
-Write-Host "[2/6] Collecting Qt dependencies..."
-& $WindeployqtPath --qmldir "$ProjectDir\ui\qml" --no-translations --no-opengl-sw "$DeployDir\MfPlayer.exe"
+Write-Host "[2/7] Collecting Qt dependencies..."
+& $WindeployqtPath --release --qmldir "$ProjectDir\ui\qml" --no-translations --no-opengl-sw `
+    --skip-plugin-types qmltooling `
+    --exclude-plugins qsqlibase,qsqlmimer,qsqloci,qsqlodbc,qsqlpsql `
+    "$DeployDir\MfPlayer.exe"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "windeployqt failed with exit code $LASTEXITCODE"
+    exit 1
+}
 
 # ── qt.conf ──
 @"
@@ -97,6 +111,7 @@ if (Test-Path $VectorSrc) {
     Remove-Item -Recurse -Force $VectorDst -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force $VectorDst | Out-Null
     Copy-Item -Recurse -Force "$VectorSrc\*" $VectorDst
+    Get-ChildItem $VectorDst -Recurse -Filter "*plugind.dll" | Remove-Item -Force
     Write-Host "  QtQuick.VectorImage deployed"
 } else {
     Write-Host "  ERROR: QtQuick.VectorImage not found at $VectorSrc" -ForegroundColor Red
@@ -116,8 +131,8 @@ $SqlDst = "$DeployDir\sqldrivers"
 if (Test-Path $SqlSrc) {
     Remove-Item -Recurse -Force $SqlDst -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force $SqlDst | Out-Null
-    Get-ChildItem "$SqlSrc\qsql*.dll" | Copy-Item -Destination $SqlDst
-    Write-Host "  SQL drivers deployed: $((Get-ChildItem $SqlDst\*.dll).Count) files"
+    Copy-Item "$SqlSrc\qsqlite.dll" $SqlDst
+    Write-Host "  SQLite driver deployed"
 } else {
     Write-Host "  ERROR: sqldrivers not found" -ForegroundColor Red
 }
@@ -140,13 +155,18 @@ if (-not $vcruntime -or -not $msvcp) {
     Write-Host "  MSVC runtime not deployed by windeployqt6, searching..."
     $vsRedist = "$env:VCToolsRedistDir"
     if (-not $vsRedist) {
-        foreach ($edition in @("Community", "Professional", "Enterprise")) {
-            $candidate = "${env:ProgramFiles}\Microsoft Visual Studio\2022\$edition\VC\Redist\MSVC"
-            if (Test-Path $candidate) {
-                $latest = Get-ChildItem $candidate -Directory | Sort-Object Name -Descending | Select-Object -First 1
-                $vsRedist = "$candidate\$($latest.Name)\x64\Microsoft.VC143.CRT"
-                if (Test-Path "$vsRedist\VCRUNTIME140.dll") { break }
-                $vsRedist = $null
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+            $vsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            $redistRoot = "$vsInstall\VC\Redist\MSVC"
+            if (Test-Path $redistRoot) {
+                $latest = Get-ChildItem $redistRoot -Directory |
+                    Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' } |
+                    Sort-Object { [version]$_.Name } -Descending |
+                    Select-Object -First 1
+                $vsRedist = Get-ChildItem "$($latest.FullName)\x64" -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { Test-Path "$($_.FullName)\VCRUNTIME140.dll" } |
+                    Select-Object -First 1 -ExpandProperty FullName
             }
         }
     }
@@ -173,22 +193,38 @@ if (Test-Path $FontSrc) {
 Write-Host "[6/7] Resolving transitive dependencies..."
 $dumpbin = Get-Command dumpbin -ErrorAction SilentlyContinue
 if (-not $dumpbin) {
-    # Try VS dev prompt paths
-    $vsPaths = @(
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
-        "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
-        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
-        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe",
-        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe"
-    )
-    foreach ($p in $vsPaths) {
-        $found = Get-ChildItem $p -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) { $dumpbin = $found.FullName; break }
+    if ($env:VCToolsInstallDir) {
+        $candidate = Join-Path $env:VCToolsInstallDir "bin\Hostx64\x64\dumpbin.exe"
+        if (Test-Path $candidate) { $dumpbin = $candidate }
+    }
+}
+if (-not $dumpbin) {
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $vswhere) {
+        $vsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        $toolsRoot = "$vsInstall\VC\Tools\MSVC"
+        if (Test-Path $toolsRoot) {
+            $latestTools = Get-ChildItem $toolsRoot -Directory |
+                Sort-Object { [version]$_.Name } -Descending |
+                Select-Object -First 1
+            $candidate = "$($latestTools.FullName)\bin\Hostx64\x64\dumpbin.exe"
+            if (Test-Path $candidate) { $dumpbin = $candidate }
+        }
     }
 }
 if ($dumpbin) {
-    Write-Host "  dumpbin: $dumpbin"
+    $dumpbinPath = if ($dumpbin -is [string]) { $dumpbin } else { $dumpbin.Source }
+    Write-Host "  dumpbin: $dumpbinPath"
+
+    # Build the Qt DLL lookup once instead of recursively searching Qt for every dependency.
+    $qtDllIndex = @{}
+    foreach ($root in @("$QtRoot\bin", "$QtRoot\plugins", "$QtRoot\qml")) {
+        Get-ChildItem $root -Recurse -Filter "*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+            $key = $_.Name.ToLowerInvariant()
+            if (-not $qtDllIndex.ContainsKey($key)) { $qtDllIndex[$key] = $_.FullName }
+        }
+    }
+
     $pass = 0
     $anyCopied = $true
     while ($anyCopied -and $pass -lt 5) {
@@ -198,24 +234,17 @@ if ($dumpbin) {
         # Collect all known filenames in deploy
         $known = @{}
         foreach ($f in $allBin) { $known[$f.Name.ToLower()] = $true }
-        # Also check subdirectories (plugins)
-        foreach ($f in (Get-ChildItem $DeployDir -Recurse -Include *.dll)) {
-            $known[$f.Name.ToLower()] = $true
-        }
         foreach ($f in $allBin) {
             if ($f.Name -match '^(VCRUNTIME|MSVCP|CONCRT|api-ms-|ext-ms-)') { continue }
-            $deps = & $dumpbin /dependents $f.FullName 2>$null |
+            $deps = & $dumpbinPath /dependents $f.FullName 2>$null |
                 Select-String '^\s{4}(\S+\.dll)' |
                 ForEach-Object { $_.Matches.Groups[1].Value.ToLower() }
             foreach ($dep in $deps) {
                 # Skip Windows system DLLs
                 if ($dep -match '^(kernel32|user32|gdi32|shell32|ole32|comdlg32|advapi32|ws2_32|d3d11|dxgi|dwmapi|d3dcompiler|opengl32|bcrypt|crypt32|secur32|ncrypt|ntdll|msvcrt|ucrtbase|combase|shlwapi|oleaut32|winmm|winhttp|mswsock|iphlpapi|dnsapi|powrprof|propsys|setupapi|cfgmgr32|rpcrt4|kernelbase|imm32|version|gdi32full|win32u|bcryptprimitives|userenv|wtsapi32|shcore|d2d1|dwrite|msimg32|windows\.storage|twinapi)') { continue }
                 if ($known.ContainsKey($dep)) { continue }
-                # Search in Qt root to resolve it
-                $src = Get-ChildItem $QtRoot -Recurse -Filter $dep -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($src) {
-                    $destDir = Split-Path -Parent $f.FullName
-                    Copy-Item $src.FullName $destDir
+                if ($qtDllIndex.ContainsKey($dep)) {
+                    Copy-Item $qtDllIndex[$dep] $DeployDir
                     Write-Host "  + $dep  (needed by $($f.Name))"
                     $known[$dep] = $true
                     $anyCopied = $true
@@ -225,13 +254,8 @@ if ($dumpbin) {
     }
     Write-Host "  Dependency scan complete ($pass pass(es))"
 } else {
-    Write-Host "  dumpbin not found, copying all Qt DLLs as fallback..."
-    Get-ChildItem "$QtRoot\bin\Qt6*.dll" | ForEach-Object {
-        if (-not (Test-Path "$DeployDir\$($_.Name)")) {
-            Copy-Item $_.FullName $DeployDir
-            Write-Host "  + $($_.Name)"
-        }
-    }
+    Write-Error "dumpbin.exe not found. Install the Visual Studio C++ tools or run this script from Developer PowerShell."
+    exit 1
 }
 
 # ── Smoke test: check the things windeployqt6 might have missed ──
@@ -267,6 +291,9 @@ Write-Host "=== Compiling installer ===" -ForegroundColor Cyan
 $Iscc = Get-Command iscc -ErrorAction SilentlyContinue
 if (-not $Iscc) {
     $candidates = @(
+        "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe",
+        "${env:ProgramFiles}\Inno Setup 7\ISCC.exe",
+        "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
         "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
     )
@@ -277,7 +304,12 @@ if (-not $Iscc) {
 
 $IssFile = "$ScriptDir\installer.iss"
 if ($Iscc -and (Test-Path $IssFile)) {
-    & $Iscc $IssFile
+    $IsccPath = if ($Iscc -is [string]) { $Iscc } else { $Iscc.Source }
+    & $IsccPath "/DMyAppVersion=$AppVersion" $IssFile
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Inno Setup failed with exit code $LASTEXITCODE"
+        exit 1
+    }
     $setup = Get-ChildItem "$ProjectDir\deploy\MfPlayer-*-setup.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($setup) {
         Write-Host ""

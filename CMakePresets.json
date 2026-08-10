@@ -10,14 +10,14 @@
       "name": "windows-base",
       "hidden": true,
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang-cl",
         "CMAKE_CXX_COMPILER": "clang-cl",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "CMAKE_PREFIX_PATH": "C:/Qt/6.11.1/msvc2022_64",
-        "CMAKE_SYSTEM_VERSION": "10.0.28000.0"
+        "CMAKE_SYSTEM_VERSION": "10.0.28000.0",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/vcpkg_installed"
       },
       "architecture": {
         "value": "x64",
@@ -33,6 +33,7 @@
       "name": "x64-debug",
       "displayName": "x64 Debug",
       "inherits": "windows-base",
+      "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
@@ -41,6 +42,7 @@
       "name": "x64-release",
       "displayName": "x64 Release",
       "inherits": "windows-base",
+      "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }

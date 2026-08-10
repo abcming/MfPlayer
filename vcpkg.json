@@ -1,20 +1,9 @@
 {
   "name": "mfplayer",
-  "version-string": "0.1.0",
+  "version-string": "1.2.4",
+  "builtin-baseline": "f171e8241df45ddc4fe62b86d226d8c7a2daba00",
   "dependencies": [
-    "pkgconf",
     "curl",
-    "ffmpeg",
-    "libass",
-    "lcms",
-    "uchardet",
-    "shaderc",
-    "spirv-cross",
-    "libarchive",
-    "libpng",
-    "libjpeg-turbo",
-    "libwebp",
-    "luajit",
     "vulkan"
   ]
 }

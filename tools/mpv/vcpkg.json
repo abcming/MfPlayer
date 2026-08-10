@@ -1,0 +1,21 @@
+{
+  "name": "mfplayer-mpv",
+  "version-string": "1.2.4",
+  "builtin-baseline": "f171e8241df45ddc4fe62b86d226d8c7a2daba00",
+  "dependencies": [
+    "curl",
+    "ffmpeg",
+    "lcms",
+    "libarchive",
+    "libass",
+    "libjpeg-turbo",
+    "libpng",
+    "libwebp",
+    "luajit",
+    "pkgconf",
+    "shaderc",
+    "spirv-cross",
+    "uchardet",
+    "vulkan"
+  ]
+}
