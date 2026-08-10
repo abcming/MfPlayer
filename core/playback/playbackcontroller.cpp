@@ -104,6 +104,18 @@ void PlaybackController::initProgressTimer() {
     m_progressTimer->setInterval(10000);
     connect(m_progressTimer, &QTimer::timeout, this, &PlaybackController::onProgressTimer);
     connect(this, &PlaybackController::endOfFile, this, [this]() {
+        // 和 onProgressTimer 用同一道守卫。换片窗口里 (playItem 已把 id 切到 B,
+        // 但 B 的 PlaybackInfo 还没回来、还没 loadfile) 到来的 EOF 一定是**A 的** ——
+        // A 在等待期间自己播完了。而 A 已经在 playItem 开头结算过。
+        //
+        // 不拦的话: 用 B 的 itemId + A 的 sessionId + B 的起播位置发一个 stop,
+        // 然后 clear() 掉 itemId —— 之后 B 整场的周期进度和最终 stop 全部静默跳过,
+        // 表现是"这一集看完了但进度没记住"。
+        //
+        // endOfFile 只从两条"正常播完"的路径发出 (eof-reached 边沿 /
+        // END_FILE reason==EOF), 加载失败走的是 errorOccurred, 所以这道守卫
+        // 不会吞掉本该上报的结算。
+        if (!m_fileLoaded) return;
         reportStopForCurrent();
         m_progressTimer->stop();
     });
