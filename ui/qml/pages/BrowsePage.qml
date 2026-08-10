@@ -1114,15 +1114,13 @@ HdrPqOverlay {
                         {name: Str.libTabFavorites, tab: 3},   // TabFavorites
                         {name: Str.libTabGenres, tab: 4},      // TabGenres
                         {name: Str.libTabStudios, tab: 5},     // TabStudios
-                        {name: Str.libTabEpisodes, tab: 6},    // TabEpisodes
-                        {name: Str.libTabFolders, tab: 7}      // TabFolders
+                        {name: Str.libTabEpisodes, tab: 6}     // TabEpisodes
                     ]
                     property var movieTabs: [
                         {name: Str.libTabMovies, tab: 0},      // TabDefault
                         {name: Str.libTabSuggestions, tab: 1}, // TabSuggestions
                         {name: Str.libTabFavorites, tab: 3},   // TabFavorites
-                        {name: Str.libTabGenres, tab: 4},      // TabGenres
-                        {name: Str.libTabFolders, tab: 7}      // TabFolders
+                        {name: Str.libTabGenres, tab: 4}       // TabGenres
                     ]
                     property var currentTabs: Library.currentLibraryType === "movies" ? movieTabs : tvTabs
                     property int selectedIndex: 0

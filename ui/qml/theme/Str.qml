@@ -62,7 +62,6 @@ QtObject {
     readonly property string libTabGenres: "类型"
     readonly property string libTabStudios: "播出平台"
     readonly property string libTabEpisodes: "集"
-    readonly property string libTabFolders: "文件夹"
 
     // ── 排序与筛选 ──
     readonly property string sortByName: "名称"

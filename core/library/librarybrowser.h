@@ -48,7 +48,7 @@ class LibraryBrowser : public QObject {
 public:
     enum BrowseTab {
         TabDefault, TabSuggestions, TabTrailers, TabFavorites,
-        TabGenres, TabStudios, TabEpisodes, TabFolders
+        TabGenres, TabStudios, TabEpisodes
     };
     Q_ENUM(BrowseTab)
 

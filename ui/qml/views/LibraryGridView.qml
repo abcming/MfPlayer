@@ -102,7 +102,7 @@ GridView {
     // ── A-Z letter index (inside right margin, left of scrollbar) ──
     Item {
         id: letterIndex
-        visible: Library.currentTab !== 6 && Library.currentTab !== 7
+        visible: Library.currentTab !== 6
         anchors {
             right: parent.right
             rightMargin: 12
@@ -224,7 +224,10 @@ GridView {
                 let type = itemType || ""
                 if (type === Str.typeMovie || type === Str.typeSeries || type === Str.typeEpisode)
                     Nav.pushDetail(itemId)
-                else { grid.contentY = 0; Detail.browseItem(itemId) }
+                // 兜底: 删掉「文件夹」Tab 后正常路径已经到不了这里, 留着防服务器
+                // 返回意外类型。原来还带一句 grid.contentY = 0, 于是"点了没反应"
+                // 实际表现成"列表莫名跳回顶部" —— 那个副作用没道理, 去掉
+                else Detail.browseItem(itemId)
             }
         }
 

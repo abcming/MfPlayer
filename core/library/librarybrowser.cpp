@@ -237,15 +237,6 @@ void LibraryBrowser::setLibraryTab(int tab) {
             .limit = m_paginationLimit
         });
         break;
-    case TabFolders:
-        dispatchFetch({
-            .parentId = m_currentLibraryId,
-            .filters = buildFiltersString(),
-            .sortBy = currentSortByString(),
-            .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending"),
-            .recursive = false
-        });
-        break;
     }
 }
 
@@ -623,15 +614,6 @@ void LibraryBrowser::applySortAndFilter() {
             .sortBy = currentSortByString(),
             .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending"),
             .limit = m_paginationLimit
-        });
-        break;
-    case TabFolders:
-        dispatchFetch({
-            .parentId = m_currentLibraryId,
-            .filters = buildFiltersString(),
-            .sortBy = currentSortByString(),
-            .sortOrder = m_sortAscending ? QStringLiteral("Ascending") : QStringLiteral("Descending"),
-            .recursive = false
         });
         break;
     default:
