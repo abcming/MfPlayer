@@ -69,7 +69,8 @@ CacheStore 主线程写 `m_imageCache`（启动批量插入、下载完成、过
 > 这是设计决策，不外包。
 
 ### A-2 · 手动换片期间旧片 EOF，会用新条目的 id 结算并清空它
-- **状态**：`已核实`
+- **状态**：`已修` — 2026-08-10，`246baaf`
+- **修法**：endOfFile 处理器补 `if (!m_fileLoaded) return;`，与 onProgressTimer 同一道守卫
 - **老王定级**：中 · **核实后**：中
 - **来源**：单 1
 - **位置**：`core/playback/playbackcontroller.cpp:129`、`:48`、`:106`
@@ -374,7 +375,8 @@ else { grid.contentY = 0; Detail.browseItem(itemId) }   // ← Folder 落这里
 ## 第二批核实（2026-08-10）· 单 1 · playback + mpv
 
 ### B-1 · 音量去重拿"旧确认值"比，且初值与 libmpv 默认不符
-- **状态**：`已核实` · **老王定级**：低 · **核实后**：**低偏中**
+- **状态**：`已修` — 2026-08-10，`fe29479`
+- **修法**：去重改比 m_requestedVolume / m_requestedSpeed，哨兵初值 -1；m_volume 初值对齐 libmpv 的 100 · **老王定级**：低 · **核实后**：**低偏中**
 - **位置**：`platform/rendering/mpv/mpvcontroller.cpp:434`、`:527`、`.h:120`、
   `core/playback/playbackcontroller.cpp:19`、`:25`
 
@@ -519,7 +521,8 @@ if (f.open(QIODevice::WriteOnly)) {
 ## 第二批核实（2026-08-10）· 单 3 · library / server / settings
 
 ### D-6 · 搜索防抖只停 timer 不失效请求；人物结果还会串台
-- **状态**：`已核实` · **老王定级**：低 · **核实后**：**中**
+- **状态**：`已修` — 2026-08-10，`93c5e1d`
+- **修法**：搜索加 m_searchGeneration；人物列表改回调式，personsFetched 信号与两个布尔删除 · **老王定级**：低 · **核实后**：**中**
 - **位置**：`core/library/librarybrowser.cpp:408`、`:420-431`、`:73-80`
 
 **① 旧结果回填空白搜索页**
@@ -574,7 +577,8 @@ grep -rn 'personBrowseStarted' ...             → 只有声明和 emit，0 个 
 按 bug 处理是错的定性；要处理就当死代码删，和 `cachedImageUrl()` 一个性质。
 
 ### D-8 · 重登已保存的服务器不改 `is_active`，重启会回到旧服务器
-- **状态**：`已核实` · **老王定级**：低 · **核实后**：**中**
+- **状态**：`已修` — 2026-08-10，`279aef9`
+- **修法**：ServerManager 登录成功后调 setActiveServer()（策略留在 ServerManager，不塞进存储层） · **老王定级**：低 · **核实后**：**中**
 - **位置**：`core/server/credentialstore.cpp:35-46`、`:67`、`core/server/servermanager.cpp:132`
 
 `addServer()` 命中已有 URL+用户名时，只 UPDATE 凭证和 `last_used`：
@@ -655,9 +659,9 @@ Dialog 没有 `onOpened` / `onClosed` 重置。所以认证失败后关掉登录
 
 ## 建议的下一步顺序
 
-**已修 10 条**：A-1 · B-2 · C-1 · D-1 · D-2 · D-3 · D-4 · E-1 · E-2 · E-3
+**已修 15 条**：A-1 · A-2 · B-1 · B-2 · C-1 · D-1 · D-2 · D-3 · D-4 · D-5 · D-6 · D-8 · E-1 · E-2 · E-3
 **驳回 1 条**：D-7（当死代码处理，不当 bug 修）。
-剩 15 条按下面的顺序走 —— 排序依据是「危害 × 用户撞上的频率 ÷ 修复成本」，不是定级高低。
+剩 10 条按下面的顺序走 —— 排序依据是「危害 × 用户撞上的频率 ÷ 修复成本」，不是定级高低。
 
 ### 第一梯队 · 已全部落地（2026-08-10）
 
@@ -677,7 +681,25 @@ Dialog 没有 `onOpened` / `onClosed` 重置。所以认证失败后关掉登录
 > 切服务器后库列表不串、切 tab/换排序时列表不混批、详情页选好的季不被别的页重置、
 > 快速 push→pop 详情页/播放器不留后台动作、从剧集页直接播某集后详情缓存仍完整。
 
-### 第二梯队 · 单点，各自独立
+### 第二梯队 · 已全部落地（2026-08-10）
+
+| 条目 | 修法 | 提交 |
+|---|---|---|
+| D-6 | 搜索加代守卫；人物列表改回调式，消灭共用信号 | `93c5e1d` |
+| D-8 | 登录成功后 `setActiveServer()` | `279aef9` |
+| B-1 | 去重比**请求值**不比确认值，哨兵初值 | `fe29479` |
+| D-5 | 指纹换成全量 Id 滚动哈希 | `3e8876c` |
+| A-2 | `endOfFile` 补 `!m_fileLoaded` 守卫 | `246baaf` |
+
+修的过程里又挖出三个零调用方的死代码：`EmbyClient::fetchPersons()`、
+`DBWorker::addServer()` / `setActiveServer()`（与 CredentialStore 重复实现）。
+连同之前的 `fetchItems()` / `fetchSuggestions()` / `browsePerson()`，一并记在下面。
+
+> 真机要看：搜索时快速删字不留残留结果、收藏页和搜索的人物不串、重登已保存
+> 服务器后重启回到它、音量设 80 重启不跳 100、库里新增一部后列表不重复不缺项、
+> 切集时上一集刚好播完不丢新集进度。
+
+### 原第二梯队清单（留档）
 
 4. **D-6** — 人物结果串台那一支优先（搜索结果填进"收藏的人物"）。
    两个布尔换成请求 id / generation。搜索请求本身也该带上守卫。
