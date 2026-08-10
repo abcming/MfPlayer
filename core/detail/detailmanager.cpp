@@ -63,6 +63,11 @@ DetailManager::DetailManager(EmbyClient *emby, CacheStore *cache, QObject *paren
         }
         m_resumeModel->updateItemByRoleName(itemId, "played", played);
         m_similarModel->updateItemByRoleName(itemId, "played", played);
+        // 详情页季内集列表 + 演员页的影片/节目两列 —— 这三个 model 上的卡片也带
+        // 收藏/已看钮, 不回写就点了不变色, 得退出重进才刷新
+        m_episodeModel->updateItemByRoleName(itemId, "played", played);
+        m_personMoviesModel->updateItemByRoleName(itemId, "played", played);
+        m_personSeriesModel->updateItemByRoleName(itemId, "played", played);
         // Re-fetch resume so fully-played items disappear from Continue Watching.
         // The server-side /Items/Resume endpoint naturally excludes items with 0 progress.
         m_emby->fetchResume(12);
@@ -79,6 +84,9 @@ DetailManager::DetailManager(EmbyClient *emby, CacheStore *cache, QObject *paren
         }
         m_resumeModel->updateItemByRoleName(itemId, "isFavorite", isFavorite);
         m_similarModel->updateItemByRoleName(itemId, "isFavorite", isFavorite);
+        m_episodeModel->updateItemByRoleName(itemId, "isFavorite", isFavorite);
+        m_personMoviesModel->updateItemByRoleName(itemId, "isFavorite", isFavorite);
+        m_personSeriesModel->updateItemByRoleName(itemId, "isFavorite", isFavorite);
         emit favoriteChanged(itemId, isFavorite);
     });
 

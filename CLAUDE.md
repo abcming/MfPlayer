@@ -270,6 +270,11 @@ cmake --build /root/myproject/mfplayer/build
   一并拆了)。**注意别一律拆**: `heart`/`home`/`movie`/`subtitles` 等 14 个图标的多子路径是
   **嵌套挖空**用的, 靠 `fillRule: WindingFill` 把内圈掏掉, 拆成多个 `<path>` 挖空就没了。
   判据: 子路径之间**互不嵌套**才拆。
+- **卡片里铺满的 `MouseArea` 必须写在最前面, 或者给 `z: -1`** → 写在后面它就压在所有
+  兄弟之上, 封面上的播放/收藏钮**全部点不到**, 症状是"点按钮直接穿透成进详情页"。
+  **`z` 只在同一父级的兄弟之间比较** —— 按钮塞在 `RoundedImage` 里, `z` 给到 20 也越不过
+  外层那个后声明的 `MouseArea`。图片和 Label 本身不收鼠标事件, 所以沉底后卡片空白处
+  照样点得到 (2026-08 SimilarItemsSection / SeriesSection 加钮时踩的)
 - **文件名类文本用 `Text.Wrap` 不用 `Text.WordWrap`** → 剧集名常常是整串文件名
   (`xxx.2026.S01E02.2160p.WEB-DL.H265`)，里面没空格，WordWrap 找不到断点就一行到底
 - **性能红线 — 不要回退以下优化**:

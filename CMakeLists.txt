@@ -180,6 +180,7 @@ qt_add_qml_module(mfplayer_app
         ui/qml/components/PersonBioSection.qml
         ui/qml/components/SimilarItemsSection.qml
         ui/qml/components/CardPlayButton.qml
+        ui/qml/components/CardActionButtons.qml
         ui/qml/components/CastAndCrewRow.qml
         ui/qml/components/MediaInfoSection.qml
         ui/qml/components/SeriesSection.qml

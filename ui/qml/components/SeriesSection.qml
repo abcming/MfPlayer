@@ -188,6 +188,7 @@ ColumnLayout {
         visible: count > 0
 
         delegate: Rectangle {
+            id: epCard
             required property string imageUrl
             required property int indexNumber
             required property string itemName
@@ -195,6 +196,8 @@ ColumnLayout {
             required property string seriesId             // 播放钮补同季播放列表用
             required property string seasonId
             required property var playbackPositionTicks   // 续播位置
+            required property bool isFavorite
+            required property bool played
 
             width: 240
             height: 196   // 从 180 加高: 标题现在最多两行, 原来的 29px 只够一行
@@ -222,15 +225,22 @@ ColumnLayout {
                     CardPlayButton {
                         visible: _epHover.hovered
                         onClicked: Nav.playCard({
-                            itemId: itemId,
-                            itemName: itemName,
+                            itemId: epCard.itemId,
+                            itemName: epCard.itemName,
                             itemType: Str.typeEpisode,
                             seriesName: root.itemData.Name || "",
-                            indexNumber: indexNumber,
-                            startTicks: playbackPositionTicks || 0,
-                            seriesId: seriesId,
-                            seasonId: seasonId
+                            indexNumber: epCard.indexNumber,
+                            startTicks: epCard.playbackPositionTicks || 0,
+                            seriesId: epCard.seriesId,
+                            seasonId: epCard.seasonId
                         })
+                    }
+
+                    CardActionButtons {
+                        visible: _epHover.hovered
+                        itemId: epCard.itemId
+                        isFavorite: epCard.isFavorite
+                        played: epCard.played
                     }
                 }
 
@@ -262,10 +272,12 @@ ColumnLayout {
             }
 
             MouseArea {
+                // 同 SimilarItemsSection: 沉到底, 否则盖住封面上的播放/收藏钮
+                z: -1
                 anchors.fill: parent
                 onClicked: {
                     root._savedScrollPos = episodeListView.contentX
-                    root.episodeClicked(itemId, root.buildPlaylistData())
+                    root.episodeClicked(epCard.itemId, root.buildPlaylistData())
                 }
             }
         }

@@ -39,12 +39,15 @@ Column {
     Component {
         id: similarDelegate
         Rectangle {
+            id: simCard
             required property string imageUrl
             required property string itemName
             required property string year
             required property string itemId
             required property string itemType
             required property var playbackPositionTicks   // 电影续播位置
+            required property bool isFavorite
+            required property bool played
 
             width: 150; height: 270
             radius: 6
@@ -67,13 +70,20 @@ Column {
 
                     // 封面正中的播放钮 —— 剧集会先问 NextUp 再起播
                     CardPlayButton {
-                        visible: _simHover.hovered && Nav.isPlayable(itemType)
+                        visible: _simHover.hovered && Nav.isPlayable(simCard.itemType)
                         onClicked: Nav.playCard({
-                            itemId: itemId,
-                            itemName: itemName,
-                            itemType: itemType,
-                            startTicks: playbackPositionTicks || 0
+                            itemId: simCard.itemId,
+                            itemName: simCard.itemName,
+                            itemType: simCard.itemType,
+                            startTicks: simCard.playbackPositionTicks || 0
                         })
+                    }
+
+                    CardActionButtons {
+                        visible: _simHover.hovered && Nav.isPlayable(simCard.itemType)
+                        itemId: simCard.itemId
+                        isFavorite: simCard.isFavorite
+                        played: simCard.played
                     }
                 }
 
@@ -96,8 +106,12 @@ Column {
             }
 
             MouseArea {
+                // 沉到底 —— 它是最后声明的, 不压下去会盖住封面上的播放/收藏钮,
+                // 点按钮直接穿透成"进详情页"。图片和文字本身不收鼠标事件,
+                // 所以卡片空白处照样点得到这一层
+                z: -1
                 anchors.fill: parent
-                onClicked: root.itemClicked(itemId, itemType)
+                onClicked: root.itemClicked(simCard.itemId, simCard.itemType)
             }
         }
     }
