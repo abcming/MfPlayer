@@ -104,6 +104,9 @@ DetailManager::DetailManager(EmbyClient *emby, CacheStore *cache, QObject *paren
             ne["IndexNumber"] = ep["IndexNumber"].toInt();
             ne["ParentIndexNumber"] = ep["ParentIndexNumber"].toInt();
             ne["SeasonId"] = ep["SeasonId"].toString();
+            // 这一集自己的时长 —— 进度条的分母。原来没带, QML 只好去拿
+            // itemData.RunTimeTicks (那是**整部剧**的), 分子分母不是一个东西
+            ne["RunTimeTicks"] = static_cast<qint64>(ep["RunTimeTicks"].toDouble());
             auto ud = ep["UserData"].toObject();
             ne["PlaybackPositionTicks"] = static_cast<qint64>(ud["PlaybackPositionTicks"].toDouble());
             ne["Played"] = ud["Played"].toBool();

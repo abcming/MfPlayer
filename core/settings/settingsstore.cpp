@@ -63,6 +63,26 @@ SettingsStore::SettingsStore(QObject *parent)
     });
 }
 
+SettingsStore::~SettingsStore() {
+    // 防抖的值先落在成员变量里, 要等 200ms 后 timer 触发才写进 QSettings。
+    // 调完 HDR 亮度 200ms 内 Alt+F4, 那个值从没进过 QSettings —— QSettings
+    // 自己的 sync 也救不了它。这里把还在等的直接兑现。
+    //
+    // 走 invokeMethod 触发 timeout 而不是重抄一遍 setValue: key 只写在
+    // 构造函数那一处, 以后加新的防抖项不会漏掉这里
+    auto fire = [](QTimer *t) {
+        if (t && t->isActive()) {
+            t->stop();
+            QMetaObject::invokeMethod(t, "timeout", Qt::DirectConnection);
+        }
+    };
+    fire(m_hdrWriteTimer);
+    fire(m_sdrWriteTimer);
+    fire(m_seekFwdWriteTimer);
+    fire(m_seekBackWriteTimer);
+    fire(m_windowSizeTimer);
+}
+
 QString SettingsStore::embyServer() const {
     return m_settings.value("emby/server").toString();
 }

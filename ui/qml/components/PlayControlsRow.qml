@@ -187,8 +187,11 @@ ColumnLayout {
         spacing: 4
 
         property var ne: playBtnRow.ne
-        property double pct: ne && root.itemData.RunTimeTicks > 0
-            ? Math.min((ne.PlaybackPositionTicks || 0) / root.itemData.RunTimeTicks * 100, 100)
+        // 分母用**这一集**的时长, 不是 itemData 的 —— 「下一集」只出现在剧集详情页,
+        // 那里 itemData 是 Series, 它的 RunTimeTicks 通常没有(→空进度条),
+        // 偶尔有的话是全剧总长(→荒谬的小比例)
+        property double pct: ne && ne.RunTimeTicks > 0
+            ? Math.min((ne.PlaybackPositionTicks || 0) / ne.RunTimeTicks * 100, 100)
             : 0
 
         Label {
@@ -227,7 +230,7 @@ ColumnLayout {
                     let ne = playBtnRow.ne
                     if (!ne) return ""
                     let ticks = ne.PlaybackPositionTicks || 0
-                    let total = root.itemData.RunTimeTicks || 0
+                    let total = ne.RunTimeTicks || 0   // 同上: 这一集的时长
                     if (ticks <= 0 || !total) return ""
                     return Str.remainingTimeCompact(total, ticks)
                 }

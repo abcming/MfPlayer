@@ -36,6 +36,8 @@ class SettingsStore : public QObject {
 
 public:
     explicit SettingsStore(QObject *parent = nullptr);
+    // 把还在等的防抖 timer 立刻兑现 —— 不然 200ms 内退出的调整就丢了
+    ~SettingsStore() override;
 
     QString embyServer() const;
     void setEmbyServer(const QString &url);

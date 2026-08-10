@@ -164,6 +164,8 @@ ApplicationWindow {
         id: loginDialog
         modal: true
         closePolicy: Popup.NoAutoClose
+        // 上一次的认证错误不该跟到下一次打开 —— 原来只在点「连接」时才隐藏
+        onOpened: errorLabel.visible = false
         anchors.centerIn: parent
         width: 400
         title: ""

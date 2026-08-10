@@ -113,6 +113,12 @@ void DBWorker::putSeasons(const QString &seriesId, const QJsonArray &seasons,
     if (m_stopFlag) return;
     QSqlQuery q(m_db);
     m_db.transaction();
+    // 先删这部剧的旧行。主键是 (series_id, season_id), 只 INSERT OR REPLACE 的话
+    // 服务器上被删掉的季不会消失, DB 里存的是历次季列表的**并集** —— UI 上多出一个
+    // 点进去空空如也的幽灵季, 要等 3 天 TTL 才自己走
+    q.prepare("DELETE FROM seasons WHERE series_id = ?");
+    q.addBindValue(seriesId);
+    q.exec();
     q.prepare("INSERT OR REPLACE INTO seasons "
               "(series_id, season_id, name, year, image_url, image_path, index_number, fetched_at) "
               "VALUES (?,?,?,?,?,?,?,?)");

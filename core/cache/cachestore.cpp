@@ -583,10 +583,21 @@ void CacheStore::doFetchImage(const QString &url, int retries, const QString &or
             {
                 QFile f(tmpPath);
                 if (f.open(QIODevice::WriteOnly)) {
-                    f.write(*dataPtr);
+                    // write/close 的返回值都要查: 前面的 QImageReader::canRead()
+                    // 校验的是**内存里**的 dataPtr, 拦不住落盘时的短写。磁盘满时
+                    // 文件被截断而 rename 照样成功, 截断的图就被登记成有效缓存,
+                    // 而且因为 providerUrl() 命中永远不会重新下载
+                    const qint64 written = f.write(*dataPtr);
+                    const bool flushed = f.flush();
                     f.close();
-                    QFile::remove(savePath);
-                    writeOk = QFile::rename(tmpPath, savePath);
+                    if (written == dataPtr->size() && flushed) {
+                        QFile::remove(savePath);
+                        writeOk = QFile::rename(tmpPath, savePath);
+                    } else {
+                        qWarning() << "CacheStore: short write" << written << "of"
+                                   << dataPtr->size() << "for" << savePath;
+                        QFile::remove(tmpPath);
+                    }
                 }
             }
             dataPtr->clear();  // free downloaded bytes ASAP
