@@ -6,6 +6,7 @@ import QtQuick
 // 用在「继续观看」/「收藏的集」(resumeCardDelegate) 和媒体库的「集」Tab。
 //
 // 放在封面正中而不是右上角: 右上角已经有收藏/已播两个钮, 再挤第三个既难点也难认。
+// 配色和那两个小钮保持一致 (同样的底色/hover 色/图标色, 一样不描边), 只是尺寸大一号。
 Rectangle {
     id: root
 
@@ -14,22 +15,15 @@ Rectangle {
     anchors.centerIn: parent
     width: 44
     height: 44
-    radius: 22
+    radius: width / 2
     // 卡片自己的 MouseArea 铺满整张卡, 这里要盖在它上面才能先收到点击
     z: 20
-    color: _hit.containsMouse ? Qt.rgba(1, 1, 1, 0.9) : Qt.rgba(0, 0, 0, 0.55)
-    border { color: Qt.rgba(1, 1, 1, 0.75); width: 1 }
-
-    // 淡入淡出, 免得 hover 时"啪"地跳出来
-    opacity: visible ? 1 : 0
-    Behavior on opacity { NumberAnimation { duration: 120 } }
+    color: _hit.containsMouse ? Qt.rgba(1, 1, 1, 0.35) : Qt.rgba(0, 0, 0, 0.45)
 
     Icon {
         anchors.centerIn: parent
-        // 图标本身偏左, 往右挪一点才在视觉上居中
-        anchors.horizontalCenterOffset: 2
         name: "play_arrow"
-        color: _hit.containsMouse ? Theme.panelDeep : Theme.textPrimary
+        color: Theme.textPrimary
         size: 22
     }
 
