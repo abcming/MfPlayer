@@ -3,7 +3,8 @@
 四单只读审计（codex / blueprint 流程），分区互不重叠，每单自行选取维度。
 共 **26 条** finding。**26 条全部核实完毕**（2026-08-10）——
 25 条成立、**1 条驳回**（D-7，描述的故障真实但整条路径没有调用方，是死代码不是 bug）。
-其中 A-1 / C-1 / D-3 / E-2 已修。
+**已修 10 条**：A-1、B-2、C-1、D-1、D-2、D-3、D-4、E-1、E-2、E-3
+（第一梯队已全部落地，均通过编译；运行时验证待真机）。
 
 ## 怎么用这个文档
 
@@ -140,7 +141,8 @@ cb(QJsonDocument::fromJson(r.ok() ? r.body : QByteArray()));   // ← 无条件
 飞行期间成员变量被改过，判断就错，而且错得静默。
 
 ### D-1 · `librariesFetched` 的 generation 守卫是摆设
-- **状态**：`已核实` · **老王定级**：中 · **核实后**：中
+- **状态**：`已修` — 2026-08-10，`23fd85f`
+- **修法**：librariesFetched 带 serverUrl + userId；m_librariesGeneration 五处赋值和声明一并删除 · **老王定级**：中 · **核实后**：中
 - **位置**：`core/server/servermanager.cpp:44`、`:66`、`:89`、`:169`
 
 ```cpp
@@ -159,7 +161,8 @@ if (m_librariesGeneration != m_serverGeneration) return;   // :169  ← 永远�
 **即：这个守卫只在登录期间有效，切换已登录服务器时完全失效。**
 
 ### D-2 · `seasonsFetched` / `episodesFetched` 不带 id，且污染会自我放大
-- **状态**：`已核实` · **老王定级**：中 · **核实后**：**中偏高**
+- **状态**：`已修` — 2026-08-10，`44ade64`
+- **修法**：signature 带上 seriesId / seasonId，槽里先比对再处理 · **老王定级**：中 · **核实后**：**中偏高**
 - **位置**：`core/providers/emby/embyclient.cpp:238`、`:251`、`core/detail/detailmanager.cpp:259`、`:264`、`:269`
 
 信号签名只有 `QJsonArray`，不带 `seriesId` / `seasonId`。
@@ -181,7 +184,8 @@ void DetailManager::onSeasonsFetched(const QJsonArray &seasons) {
 另外 :261 的 `emit seasonsChanged()` 是**无参全局信号** —— 这正是 E-1 的另一半。
 
 ### D-4 · `onItemsFetched` 只比 parentId，不看 generation
-- **状态**：`已核实` · **老王定级**：中 · **核实后**：中
+- **状态**：`已修` — 2026-08-10，`0cc3b4f`
+- **修法**：用 cacheKey 当请求身份 + dispatchFetch() 收口 10 个分发点 · **老王定级**：中 · **核实后**：中
 - **位置**：`core/library/librarybrowser.cpp:504`、`:272`、`:283`
 
 ```cpp
@@ -200,7 +204,8 @@ m_contentModel->setItems(items);              // :507
 ## 根因二：QML 侧不校验数据/事件属于当前页（E-1 / E-2 / E-3）
 
 ### E-1 · `onSeasonsChanged` 的守卫验错了对象
-- **状态**：`已核实` · **老王定级**：中 · **核实后**：中
+- **状态**：`已修` — 2026-08-10，`60b4531`
+- **修法**：seasonsChanged 带 seriesId，DetailPage 与 SeriesSection 两个槽都改成验归属 · **老王定级**：中 · **核实后**：中
 - **位置**：`ui/qml/pages/DetailPage.qml:123`
 
 ```qml
@@ -234,7 +239,8 @@ audioIndex / subtitleIndex），唯独没清 `itemData`**。
 `Detail.browseItem(ep.itemId)`（:176）刷新的是 Detail 单例，不是这个 property，救不了。
 
 ### E-3 · 400ms 入场 Timer 落在 pop 过渡的存活窗口里
-- **状态**：`已核实` · **老王定级**：中 · **核实后**：中
+- **状态**：`已修` — 2026-08-10，`a4dfb17`
+- **修法**：StackView.onDeactivating 停 timer · **老王定级**：中 · **核实后**：中
 - **位置**：`ui/qml/pages/PlayerPage.qml:78`、`ui/qml/pages/DetailPage.qml:81`、`ui/qml/theme/Nav.qml:21`
 
 两个页面都是 `Component.onCompleted: timer.start()`，interval 400ms，
@@ -407,7 +413,8 @@ playbackcontroller.cpp:25 → m_settings->setVolume(100)   ← 用户的 80 被�
 ```
 
 ### B-2 · 只含 MediaSources 的残缺对象被当完整详情写回缓存
-- **状态**：`已核实` · **老王定级**：低 · **核实后**：**中偏高**
+- **状态**：`已修` — 2026-08-10，`2b8d052`
+- **修法**：MediaSources 单独存进 m_currentMediaSources，m_currentItemDetail 恢复"要么完整要么空"的不变量 · **老王定级**：低 · **核实后**：**中偏高**
 - **位置**：`core/playback/playbackcontroller.cpp:139`、`:164`、`:276-286`、`core/cache/cachestore.cpp:229`
 
 ```cpp
@@ -648,25 +655,27 @@ Dialog 没有 `onOpened` / `onClosed` 重置。所以认证失败后关掉登录
 
 ## 建议的下一步顺序
 
-**已修 4 条**：A-1 (`b5a599d`)、C-1 (`741ddc9`)、D-3 (`07341b9`)、E-2 (`bed29d3`)。
+**已修 10 条**：A-1 · B-2 · C-1 · D-1 · D-2 · D-3 · D-4 · E-1 · E-2 · E-3
 **驳回 1 条**：D-7（当死代码处理，不当 bug 修）。
-剩 21 条按下面的顺序走 —— 排序依据是「危害 × 用户撞上的频率 ÷ 修复成本」，不是定级高低。
+剩 15 条按下面的顺序走 —— 排序依据是「危害 × 用户撞上的频率 ÷ 修复成本」，不是定级高低。
 
-### 第一梯队 · 高频且实伤
+### 第一梯队 · 已全部落地（2026-08-10）
 
-1. **B-2** — 中偏高。触发路径是"从剧集页直接点某集播放"这种日常操作，
-   而后果是残缺对象**整体覆盖**详情缓存（内存 + SQLite）。
-   修法两选一：`updateCachedProgress()` 判一下 `cached` 是否含 `Id`/`RunTimeTicks`，
-   或者根本不要往 `m_currentItemDetail` 里塞半截对象（`:164` 单独存 MediaSources）。
-   **后者更治本** —— 那个残缺状态目前是靠"每个用到的地方各自绕开"维持的，
-   已经绕漏了一处，还会有下一处。
+三条根因，六个提交：
 
-2. **D-2 / D-1 / D-4** — 同一个形状：**异步响应不带请求身份**。三条一个修法
-   （把请求身份放进响应，回调里比对）。D-2 危害最实（污染写进 SQLite 且会自我放大一次），
-   D-4 最省事。三条一起改比分三次省。
+| 根因 | 条目 | 修法 |
+|---|---|---|
+| 半截对象被当完整数据用 | B-2 | MediaSources 单独存，`m_currentItemDetail` 恢复"要么完整要么空" |
+| 异步响应不带请求身份 | D-2 / D-4 / D-1 | 响应带上 id / cacheKey / server+user，回调里比对 |
+| QML 不校验事件归属 | E-1 / E-3 | 信号带 seriesId；入场 timer 在 `onDeactivating` 停掉 |
 
-3. **E-1 / E-3** — 同一个形状：**QML 侧不校验数据/事件属于当前页**。
-   E-1 把守卫从"验自己内部一致"改成"验事件归属"；E-3 退场时 stop timer 或查 `StackView.status`。
+修的过程里顺手清掉两处死代码（`m_librariesGeneration` 的五处赋值、
+`cachedImageUrl()`），并给 LibraryBrowser 加了 `dispatchFetch()` 收口 ——
+**新增分发点必须走它**，绕过去就等于没有守卫。
+
+> 全部通过编译，**运行时行为尚未在真机验证**。要看的几处：
+> 切服务器后库列表不串、切 tab/换排序时列表不混批、详情页选好的季不被别的页重置、
+> 快速 push→pop 详情页/播放器不留后台动作、从剧集页直接播某集后详情缓存仍完整。
 
 ### 第二梯队 · 单点，各自独立
 
