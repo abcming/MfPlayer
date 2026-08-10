@@ -1,7 +1,7 @@
 # MfPlayer 全仓库审计 — 2026-08-09
 
 四单只读审计（codex / blueprint 流程），分区互不重叠，每单自行选取维度。
-共 **26 条** finding。**已核实 10 条（其中 A-1、E-2 已修），剩 16 条待核实**（2026-08-10）。
+共 **26 条** finding。**已核实 13 条（其中 A-1、E-2 已修），剩 13 条待核实**（2026-08-10）。
 
 ## 怎么用这个文档
 
@@ -19,8 +19,15 @@
 
 ---
 
-> **路径更正**：`embyclient.cpp` 的真实路径是 `core/providers/emby/embyclient.cpp`（下面多一层 `emby/`）。
-> 原报告里的位置都少写了这一层。
+> **路径更正**：原报告的路径普遍少写一层目录，核实时按下表换算 ——
+>
+> | 报告里写的 | 真实路径 |
+> |---|---|
+> | `embyclient.cpp` | `core/providers/emby/embyclient.cpp` |
+> | `mediamodel.cpp` | `core/media/models/mediamodel.cpp` |
+> | `LibraryGridView.qml` | `ui/qml/views/LibraryGridView.qml` |
+>
+> 行号本身是准的，只是目录层级不全。后面核实剩下几条时先 `find` 一下再读。
 
 ## 已核实（10 条）
 
@@ -246,6 +253,109 @@ t=710   销毁
 
 ---
 
+## C-1 · `clearImageCache()` 清不干净，残留下载会把缓存写回来
+- **状态**：`已核实` · **老王定级**：中 · **核实后**：**中偏高**
+- **位置**：`core/cache/cachestore.cpp:398`、`:474`、`:487`、`:505`、`core/cache/dbworker.cpp:155`、`:303`
+
+`clearImageCache()` 只清两样：
+
+```cpp
+m_imageCache.clear();
+m_pendingDownloads.clear();
+```
+
+**`m_downloadQueue` 没清**（`:474` append，`:487` takeFirst），下载完成的 `done()`
+还会接着 `processDownloadQueue()` 拉下一个；`doFetchImage` 的重试
+`QTimer::singleShot(kImageRetryDelayMs, ...)` 也没人取消。清空后队列里排着的任务照跑到底。
+
+跑完就走 `putImagePath()` → 写 `m_imageCache` + 落盘 + 转发 DBWorker，
+而 `DBWorker::putImagePath()` 是 **`Q_UNUSED(generation)`** —— 上游那个
+`++m_writeGeneration` 对它毫无作用，SQL 照写。
+
+**比原报告更狠的一点在时序。** `DBWorker::clearImageCache()` 是异步的
+（`DELETE FROM images` → `removeRecursively()` → `mkpath()`），残留下载落在它前后是两种坏法：
+
+```
+落在 removeRecursively 之后 → 文件+内存+SQLite 三处复活，清了个寂寞（能自愈）
+落在 removeRecursively 之前 → 文件被删，m_imageCache 里的条目留着 ← 幽灵条目
+```
+
+幽灵条目是不自愈的：`providerUrl()` 命中就返回路径，provider 读不到文件给张透明图，
+**而且因为"命中了"永远不会重新下载**。用户看到的是几张永久空白的封面，
+清缓存、重启都不一定好（`loadImageCache()` 启动时会校验文件存在，重启能好；
+本次运行内不会）。
+
+修的时候注意：清队列 + 取消重试 timer 是主线程的事，`Q_UNUSED(generation)` 是 DBWorker 的事，
+两处都要动，只补一处仍会漏。
+
+---
+
+## D-5 · `size + firstId` 指纹碰撞，列表重复一项、缺一项
+- **状态**：`已核实` · **老王定级**：中 · **核实后**：中
+- **位置**：`core/media/models/mediamodel.cpp:62`、`:84`、`core/library/librarybrowser.cpp:183`、`:263`、`:280`
+
+```cpp
+if (items.size() == m_lastSourceSize
+    && (items.isEmpty() || firstId == m_lastSourceFirstId))
+    return;                          // ← 认定"数据没变", 跳过 reset
+```
+
+指纹只有**条数**和**第一条的 Id**。首屏是分页拉的（`limit = m_paginationLimit`），
+所以「库中部新增一部影片」这个再普通不过的情况下，两项都不变：
+
+```
+旧首屏 20 条: [A B C … S T]        firstId=A, size=20
+新增一部 M', 服务器新顺序前 20 条: [A B C … M' … S]   firstId=A, size=20
+                                    ↑ 指纹一模一样 → setItems 直接 return
+```
+
+模型里留着旧的 20 条。接着 `loadMore()` 用
+`startIndex = m_contentModel->rowCount()`（`:263`/`:280`）—— 还是 20，
+但服务器那边第 21 条已经是**旧的第 20 条**了：
+
+- **T 重复出现**（第 20 位一次，续拉批次里再一次）
+- **M' 永远看不到**
+
+而 `appendItems()` 不去重（`:84`，直接 `m_items.append`），重复项实打实进列表。
+`m_idToIndex` 里 `insert` 同 key 后指向后一个，所以之后对 T 的原地更新
+（收藏/已播状态）只会改到第二份，第一份显示的是陈旧状态。
+
+缓存预显示（`librarybrowser.cpp:183`）是这条的放大器：首屏一定先塞一次缓存数据，
+网络数据回来时指纹几乎必然撞上。
+
+---
+
+## E-4 · 「文件夹」Tab 里点文件夹，列表跳回顶部，然后什么都不发生
+- **状态**：`已核实` · **老王定级**：中 · **核实后**：中
+- **位置**：`ui/qml/views/LibraryGridView.qml:221-228`、`core/detail/detailmanager.cpp:127`、`core/library/librarybrowser.cpp:249`
+
+```qml
+if (Library.currentTab === 5) { Library.browseStudio(...); return }
+if (Library.currentTab === 4) { Library.browseGenre(...); return }
+let type = itemType || ""
+if (type === Str.typeMovie || type === Str.typeSeries || type === Str.typeEpisode)
+    Nav.pushDetail(itemId)
+else { grid.contentY = 0; Detail.browseItem(itemId) }   // ← Folder 落这里
+```
+
+`TabFolders = 7` 的拉取（`librarybrowser.cpp:249`）**不设 `includeTypes`、`recursive = false`**，
+返回的就是目录下的原样条目，Folder 类型必然在内。两个 Tab 列表
+（`BrowsePage.qml:1118` / `:1125`）都有「文件夹」入口，电影库和剧集库都能进。
+
+兜底分支调的 `DetailManager::browseItem()` 只做三件事：清几个 model、取详情、
+`emit itemDetailReady`。**它不 push 任何页面，也不改 LibraryBrowser 的浏览上下文。**
+唯一在听 `itemDetailReady` 的是 DetailPage，而 DetailPage 根本没被 push。
+
+**比原报告多的一点**：`grid.contentY = 0` 会先把网格**滚回顶部**。
+所以用户的实际观感不是"点了没反应"，是"点一下，列表莫名其妙跳到最上面"——
+更像 bug，也更难让人想到是点击没被处理。
+
+全仓库没有 `kTypeFolder` 这个常量（grep 无结果），意味着 Folder 从来没被当成一种类型对待过。
+这不是漏了个 `if`，是**目录浏览这条链本来就没接**。修法要先定产品：
+是进目录（要 LibraryBrowser 支持 parentId 下钻 + 返回栈），还是干脆把这个 Tab 摘掉。
+
+---
+
 ## 未核实 · 单 1 · playback + mpv（2 条）
 
 | # | 位置 | 摘要 | 老王定级 |
@@ -256,24 +366,24 @@ t=710   销毁
 
 > 单 1 备注：D3D11 渲染路径、Vulkan 图像所有权/销毁顺序、锁序与控制器 teardown 已读，无额外 finding。
 
-## 未核实 · 单 2 · cache + network（4 条）
+## 未核实 · 单 2 · cache + network（3 条）
+
+> C-1 已于 2026-08-10 核实，移到上面。
 
 | # | 位置 | 摘要 | 老王定级 |
 |---|---|---|---|
-| C-1 | `cachestore.cpp:385` | `clearImageCache()` 不清 `m_downloadQueue`、不取消 curl 请求/重试定时器/IO 池任务；旧任务完成后 `putImagePath()` 把刚清空的缓存重新写回磁盘+内存+SQLite。`DBWorker::putImagePath()` 更是直接 `Q_UNUSED(generation)` | 中 |
 | C-2 | `dbworker.cpp:36` | `stop()` 设 flag + `quit()`，并不排空事件队列（与头文件注释声称的 "drains the event queue" 相反）；退出前最后一批 `putItems()` 丢失 | 低 |
 | C-3 | `dbworker.cpp:115` | `putSeasons()` 事务内只做 `INSERT OR REPLACE`，不先删该 `series_id` 旧行 → DB 存的是历次季列表的并集；季被删除后幽灵季会残留到 TTL 过期 | 低 |
 | C-4 | `cachestore.cpp:590` | `QFile::write()` 返回值未检查，`writeOk` 只看 `rename()`。短写/写失败后 rename 仍成功 → 截断文件被登记为有效缓存，且因 `m_imageCache` 已命中不会重新下载 | 低 |
 
 > 单 2 备注：CurlEngine 完整读过（easy handle / slist / Task / 取消路径 / 回调销毁引擎），无达到门槛的问题。
 
-## 未核实 · 单 3 · library / detail / server / settings / media / providers（5 条）
+## 未核实 · 单 3 · library / detail / server / settings / media / providers（4 条）
 
-> D-1 / D-2 / D-3 / D-4 已于 2026-08-10 核实，移到上面。
+> D-1 ~ D-5 已于 2026-08-10 核实，移到上面。
 
 | # | 位置 | 摘要 | 老王定级 |
 |---|---|---|---|
-| D-5 | `mediamodel.cpp:62`、`librarybrowser.cpp:181`、`:500` | `size + firstId` 指纹碰撞：库中部新增一部影片时数量与首个 ID 都不变，网络首屏被跳过，分页却按服务器新顺序续拉 → 当前列表重复一项、缺一项 | 中 |
 | D-6 | `librarybrowser.cpp:73`、`:408`、`:420` | 搜索防抖只停未触发的 timer，不失效已发出的请求；输入缩短后旧结果回填空白搜索页。人物响应仅靠布尔值路由，连续搜索会互相吞掉 | 低 |
 | D-7 | `librarybrowser.cpp:329`、`embyclient.cpp:646`、`:504` | `browsePerson()` 的 `FetchParams` 不设 `parentId`，回来必然被 `parentId != m_currentLibraryId` 丢弃 → 人物浏览点了没反应（**注：老王看不到 QML，已自行降级；需结合单 4 一起判**） | 低 |
 | D-8 | `credentialstore.cpp:35`、`servermanager.cpp:49` | `addServer()` 命中已有 URL+用户名时只更新凭证，不设 active 也不取消原 active；重新登录已保存的非活动服务器后，重启会恢复到错误的服务器 | 低 |
@@ -281,13 +391,12 @@ t=710   销毁
 
 > 单 3 备注：`updateCardField()` 的传播覆盖完整；similar/person/nextUp 的响应 ID 守卫有效；`MediaModel::removeItem()` 正确失效指纹并重建索引。
 
-## 未核实 · 单 4 · ui/qml（4 条）
+## 未核实 · 单 4 · ui/qml（3 条）
 
-> E-1 / E-2 / E-3 已于 2026-08-10 核实，移到上面。
+> E-1 ~ E-4 已于 2026-08-10 核实，移到上面。
 
 | # | 位置 | 摘要 | 老王定级 |
 |---|---|---|---|
-| E-4 | `LibraryGridView.qml:221`、`:227` | 点击分支只处理 Studio/Genre/Movie/Series/Episode；「文件夹」Tab 里真正的 Folder 项落到兜底分支，只调 `Detail.browseItem()`，既不进目录也不 push 详情 → 点了没反应 | 中 |
 | E-5 | `BrowsePage.qml:1284`、`:1326` | UNC URL `file://NAS/share/x.mkv` 正则去掉 `file://` 后变成相对路径 `NAS/share/x.mkv`，丢掉 UNC 根前缀 → 从 `\\NAS\Videos` 播放/拖入失败 | 低 |
 | E-6 | `PlayControlsRow.qml:190`、`:227` | 「下一集」进度的分子取 `nextEpisode.PlaybackPositionTicks`，分母却取 Series 的 `RunTimeTicks` → 空进度条或荒谬的剩余时间 | 低 |
 | E-7 | `Main.qml:355`、`:395` | 登录失败的 `errorLabel` 只在下次点"连接"时隐藏，Dialog 的 `onOpened`/`onClosed` 都不重置 → 关掉再打开仍显示上一次的认证错误 | 低 |
@@ -306,7 +415,10 @@ t=710   销毁
 6. **E-1 / E-3** — 同形状：**QML 侧不校验数据/事件属于当前页**。E-1 是把守卫从"验自己内部一致"改成"验事件归属"；E-3 是退场时 stop timer 或加 `StackView.status` 检查。
 7. **A-2** — 修法要和 `m_fileLoaded` 的改动放一起想（同属播放结算链）。
 8. **A-3** — 实锤但只影响 OpenGL 后端，Windows 主路径碰不到，可以缓。
-9. 其余 16 条未核实的，**核实之前一律不许开修**。
+9. **C-1** — 幽灵条目那一支不自愈，且清缓存是用户主动动作，失望感最强。要动两处（主线程清队列/取消重试 + DBWorker 认 generation）。
+10. **D-5** — 一行指纹换成"条数 + 首尾 Id"或直接去掉去重（去重是为了防闪烁，别一刀切）。改之前先想清楚它保护的是什么。
+11. **E-4** — 不是补个 `if` 的事，先定产品：接目录下钻，还是摘掉「文件夹」Tab。放最后。
+12. 其余 13 条未核实的，**核实之前一律不许开修**。
 
 ## 今天已修（不在上表内）
 
