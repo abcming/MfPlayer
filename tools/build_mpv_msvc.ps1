@@ -107,6 +107,26 @@ if (-not $MesonConfigured) {
 # in Developer PowerShell. Tell Python to replace undecodable bytes.
 $env:PYTHONIOENCODING = "utf-8:replace"
 
+# libplacebo uses Clang/GCC-style warning flags. clang-cl keeps the MSVC ABI
+# required by the x64-windows vcpkg triplet while accepting those flags.
+$ClangCl = Get-Command clang-cl.exe -ErrorAction SilentlyContinue
+if (-not $ClangCl -and $env:VSINSTALLDIR) {
+    $ClangClPath = Join-Path $env:VSINSTALLDIR "VC/Tools/Llvm/x64/bin/clang-cl.exe"
+    if (Test-Path $ClangClPath) { $ClangCl = Get-Item $ClangClPath }
+}
+if (-not $ClangCl) {
+    throw "clang-cl.exe not found. Install the Visual Studio C++ Clang tools."
+}
+$env:CC = $ClangCl.Source
+$env:CXX = $ClangCl.Source
+$LlvmRc = Join-Path (Split-Path -Parent $ClangCl.Source) "llvm-rc.exe"
+if (-not (Test-Path $LlvmRc)) {
+    throw "llvm-rc.exe not found next to clang-cl.exe."
+}
+$env:RC = $LlvmRc
+Write-Host "Compiler: $($ClangCl.Source)" -ForegroundColor Green
+Write-Host "Resource compiler: $LlvmRc" -ForegroundColor Green
+
 $MesonArgs = @(
     "setup", $BuildDir,
     "--prefix=$InstallDir",
@@ -146,7 +166,11 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Install failed"; exit 1 }
 Write-Host "`n=== Step 6: Deploying DLLs ===" -ForegroundColor Yellow
 
 $DepsDir = "$InstallDir/lib/deps"
-if (-not (Test-Path $DepsDir)) { New-Item -ItemType Directory -Path $DepsDir | Out-Null }
+if (Test-Path $DepsDir) {
+    Get-ChildItem $DepsDir -Filter *.dll -File | Remove-Item -Force
+} else {
+    New-Item -ItemType Directory -Path $DepsDir | Out-Null
+}
 Copy-Item "$VcpkgInstalled/bin/*.dll" $DepsDir -Force
 
 # Also deploy vulkan-1.dll from vcpkg installed or Vulkan SDK

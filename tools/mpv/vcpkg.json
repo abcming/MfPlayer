@@ -1,7 +1,7 @@
 {
   "name": "mfplayer-mpv",
-  "version-string": "1.2.4",
-  "builtin-baseline": "f171e8241df45ddc4fe62b86d226d8c7a2daba00",
+  "version-string": "1.3.0",
+  "builtin-baseline": "dc31f86a441067d6c2e9e4ad52988eb41ef4f442",
   "dependencies": [
     "curl",
     "ffmpeg",

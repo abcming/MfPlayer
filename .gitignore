@@ -1,5 +1,7 @@
 build/
 deploy/
+out/
+.cache/
 
 # Prebuilt mpv binaries (build from source with tools/build_mpv_msvc.ps1)
 # Keep include/ (custom header files) for compilation
