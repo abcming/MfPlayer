@@ -765,7 +765,7 @@ void EmbyClient::fetchFavPersons(int limit, JsonArrayCallback callback) {
     query.addQueryItem("UserId", m_userId);
     query.addQueryItem("Filters", "IsFavorite");
     query.addQueryItem("Limit", QString::number(limit));
-    query.addQueryItem("Fields", EmbyFields::Card);
+    query.addQueryItem("Fields", EmbyFields::CardWithUser);
     query.addQueryItem("ImageTypeLimit", "1");
     query.addQueryItem("SortBy", "SortName");
     query.addQueryItem("SortOrder", "Ascending");
@@ -779,7 +779,7 @@ void EmbyClient::searchPersons(const QString &term, int limit, JsonArrayCallback
     query.addQueryItem("UserId", m_userId);
     query.addQueryItem("SearchTerm", term);
     query.addQueryItem("Limit", QString::number(limit));
-    query.addQueryItem("Fields", EmbyFields::Card);
+    query.addQueryItem("Fields", EmbyFields::CardWithUser);
     query.addQueryItem("ImageTypeLimit", "1");
     query.addQueryItem("SortBy", "SortName");
     query.addQueryItem("SortOrder", "Ascending");

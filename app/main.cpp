@@ -101,7 +101,9 @@ int main(int argc, char *argv[]) {
     // Separate from globalInstance() so disk-blocked threads don't starve CPU tasks.
     s_ioPool.setMaxThreadCount(std::max(2, QThread::idealThreadCount() / 2));
 
-    QQmlApplicationEngine qmlEngine;
+    // 堆分配是为了能显式控制销毁顺序, 见 main 结尾。栈变量会排在 app 之后析构,
+    // 那时 mpv 的 render context 已经被 VkDevice 的销毁甩在后面了
+    auto *qmlEngine = new QQmlApplicationEngine;
 
     auto *serverMgr = new ServerManager(&app);
     auto *playbackCtrl = new PlaybackController(serverMgr->emby(), serverMgr->cache(), serverMgr->settings(), &app);
@@ -135,16 +137,16 @@ int main(int argc, char *argv[]) {
         serverMgr->emby()->flushPendingRequests(1500);
     });
 
-    qmlEngine.rootContext()->setContextProperty("Playback", playbackCtrl);
-    qmlEngine.rootContext()->setContextProperty("Library", libraryBrowser);
-    qmlEngine.rootContext()->setContextProperty("Detail", detailMgr);
-    qmlEngine.rootContext()->setContextProperty("Server", serverMgr);
+    qmlEngine->rootContext()->setContextProperty("Playback", playbackCtrl);
+    qmlEngine->rootContext()->setContextProperty("Library", libraryBrowser);
+    qmlEngine->rootContext()->setContextProperty("Detail", detailMgr);
+    qmlEngine->rootContext()->setContextProperty("Server", serverMgr);
 
     // Application directory for resolving relative paths (fonts etc.)
     // When launched via "Open with", the working directory is not the app dir.
-    qmlEngine.rootContext()->setContextProperty("_appDir", app.applicationDirPath());
+    qmlEngine->rootContext()->setContextProperty("_appDir", app.applicationDirPath());
 
-    qmlEngine.addImageProvider(
+    qmlEngine->addImageProvider(
         "imgcache", new ImageCacheProvider(serverMgr->cache()));
 
     // Pass command-line file path for system "Open with" integration
@@ -154,17 +156,19 @@ int main(int argc, char *argv[]) {
         QUrl url(args.at(1));
         startupFile = url.isLocalFile() ? url.toLocalFile() : args.at(1);
     }
-    qmlEngine.rootContext()->setContextProperty("_appVersion", MFPLAYER_APP_NAME " v" MFPLAYER_VERSION);
-    qmlEngine.rootContext()->setContextProperty("_qtVersion", QT_VERSION_STR);
-    qmlEngine.rootContext()->setContextProperty("_startupFile", startupFile);
+    qmlEngine->rootContext()->setContextProperty("_appVersion", MFPLAYER_APP_NAME " v" MFPLAYER_VERSION);
+    qmlEngine->rootContext()->setContextProperty("_qtVersion", QT_VERSION_STR);
+    qmlEngine->rootContext()->setContextProperty("_startupFile", startupFile);
 
-    qmlEngine.loadFromModule("mfplayer", "Main");
+    qmlEngine->loadFromModule("mfplayer", "Main");
 
-    if (qmlEngine.rootObjects().isEmpty())
+    if (qmlEngine->rootObjects().isEmpty()) {
+        delete qmlEngine;
         return -1;
+    }
 
     QQuickWindow *rootWin = nullptr;
-    for (auto *obj : qmlEngine.rootObjects()) {
+    for (auto *obj : qmlEngine->rootObjects()) {
         if (auto *win = qobject_cast<QQuickWindow *>(obj)) {
             win->setPersistentGraphics(true);
             // Request HDR swapchain via Qt 6.11 QRhi — must be set before scene graph init.
@@ -189,7 +193,7 @@ int main(int argc, char *argv[]) {
     // Warmup: pre-allocate fullscreen swapchain to avoid first-toggle GPU stall.
     // Deferred to after app.exec() starts so the UI can render first.
     if (rootWin) {
-        QTimer::singleShot(100, rootWin, [rootWin, ctx = qmlEngine.rootContext(), playbackCtrl]() {
+        QTimer::singleShot(100, rootWin, [rootWin, ctx = qmlEngine->rootContext(), playbackCtrl]() {
             rootWin->showFullScreen();
             QTimer::singleShot(0, rootWin, [rootWin, ctx, playbackCtrl]() {
                 rootWin->showNormal();
@@ -235,5 +239,17 @@ int main(int argc, char *argv[]) {
         });
     }
 
-    return app.exec();
+    int rc = app.exec();
+
+    // 销毁顺序必须是 QML → mpv render context → VkDevice, 而默认顺序正好把最后
+    // 两步弄反了: cleanupDevice 挂在 qAddPostRoutine 上, 它跑在 ~QCoreApplication
+    // 的**函数体内**; 而 playbackCtrl 是 app 的 child, 要等基类 ~QObject 删
+    // children 时才轮到 ~MpvController 去 mpv_render_context_free。于是
+    // vkDestroyDevice 先执行, gpu-next 随后拿一个已经无效的 device 去销毁纹理和
+    // 信号量 —— 只在 Vulkan 后端且真正创建过 render context 时才走到这里。
+    // (注册点原来的注释说「QML engine 连同用这个 device 的一切都已销毁」, 前提是
+    //  错的: MpvController 不在 engine 树下, 它挂在 app 的 children 上。)
+    delete qmlEngine;      // 先拆窗口与场景图, 此时 VkImage 的持有者才真正放手
+    delete playbackCtrl;   // 再放 mpv render context, 早于下面的 vkDestroyDevice
+    return rc;             // 最后 app 析构 → qt_call_post_routines → cleanupDevice
 }

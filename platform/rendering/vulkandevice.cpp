@@ -246,8 +246,12 @@ bool initialize()
     s_physDev = physDev;
     s_dev = dev;
     s_queueFamily = uint32_t(qfi);
-    // Runs in ~QCoreApplication — after the QML engine (and with it every
-    // window/scenegraph using this device) has been destroyed.
+    // Runs inside ~QCoreApplication's body — i.e. BEFORE the base ~QObject deletes
+    // app's children. The QML engine is gone by then, but MpvController is not a
+    // child of the engine: it hangs off PlaybackController, which is a child of
+    // app, so its mpv_render_context_free() would land after vkDestroyDevice().
+    // main() therefore deletes the engine and PlaybackController explicitly, in
+    // that order, right after exec() returns — keep it that way.
     qAddPostRoutine(cleanupDevice);
 
     qDebug() << "VulkanDevice: created device on" << props.deviceName
