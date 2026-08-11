@@ -386,7 +386,12 @@ HdrPqOverlay {
                         Label {
                             text: {
                                 let py = itemData.ProductionYear || 0
-                                if (!py) return ""
+                                // 同 MediaModel::fromJson: 缺年份时 Emby 给的可能是 1
+                                // 而不是 0, 光判空会显示成「1 - 现在」。年份不可用但
+                                // 确实在连载时, 只报「现在」—— 区间得有起点, 占位值不算
+                                if (py <= 1900)
+                                    return (itemData.Status || "") === "Continuing"
+                                           ? Str.detailYearNowOnly : ""
                                 let ed = itemData.EndDate || ""
                                 if (ed) {
                                     let ey = parseInt(ed.substring(0, 4))

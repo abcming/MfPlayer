@@ -212,7 +212,9 @@ MediaModel::Item MediaModel::fromJson(const QJsonObject &obj) {
     item.name = obj["Name"].toString();
     item.type = obj["Type"].toString();
     int py = obj["ProductionYear"].toInt();
-    if (py > 0) {
+    // 门槛是 1900 不是 0: 缺年份的条目 Emby 有时给的不是 0 而是 1, 于是连载中的
+    // 剧集显示成「1 - 现在」。电影史从 1888 年起步, 1900 以前的片子不会进媒体库
+    if (py > 1900) {
         QString endDate = obj["EndDate"].toString();
         if (!endDate.isEmpty()) {
             int ey = endDate.left(4).toInt();
@@ -227,6 +229,10 @@ MediaModel::Item MediaModel::fromJson(const QJsonObject &obj) {
             else
                 item.year = QString::number(py);
         }
+    } else if (obj["Status"].toString() == "Continuing") {
+        // 没有首播年份、但确实在连载 —— 只报「现在」。写成区间要有起点,
+        // 而这里的起点是个占位值, 不能拿它当年份
+        item.year = QStringLiteral("现在");
     }
     item.overview = obj["Overview"].toString();
     item.parentId = obj["ParentId"].toString();

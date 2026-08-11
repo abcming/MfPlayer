@@ -82,6 +82,7 @@ QtObject {
     readonly property string detailStatusContinuing: "● 连载中"
     readonly property string detailStatusEnded: "● 已完结"
     readonly property string detailYearOngoing: " - 现在"
+    readonly property string detailYearNowOnly: "现在"   // 连载中但没有首播年份
     readonly property string detailBorn: "出生"
     readonly property string detailDied: "去世"
     readonly property string detailBirthPlace: "出生地"
