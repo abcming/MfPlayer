@@ -212,6 +212,10 @@ void EmbyClient::fetchItemDetail(const QString &itemId) {
     query.addQueryItem("Fields", EmbyFields::Detail);
 
     getJson("/emby/Users/" + m_userId + "/Items/" + itemId, query, [this](const QJsonDocument &doc) {
+        // getJson 失败时会拿空文档调这里, 空对象/空数组与「服务器真的返回空」
+        // 无法区分, 下游照单全收写进缓存 —— 一次超时就能抹掉有效数据。
+        // (对照: postJson 失败时直接不调 cb, GET 这条路当初漏了)
+        if (doc.isNull()) return;
         emit itemDetailFetched(doc.object());
     });
 }
@@ -224,6 +228,7 @@ void EmbyClient::fetchSeasons(const QString &seriesId) {
     query.addQueryItem("SortOrder", "Ascending");
 
     getJson("/emby/Shows/" + seriesId + "/Seasons", query, [this, seriesId](const QJsonDocument &doc) {
+        if (doc.isNull()) return;   // 同上
         emit seasonsFetched(doc.object()["Items"].toArray(), seriesId);
     });
 }
@@ -238,6 +243,7 @@ void EmbyClient::fetchEpisodes(const QString &seriesId, const QString &seasonId)
 
     getJson("/emby/Shows/" + seriesId + "/Episodes", query,
             [this, seriesId, seasonId](const QJsonDocument &doc) {
+        if (doc.isNull()) return;   // 同上, 下游 putEpisodes 会写缓存
         emit episodesFetched(doc.object()["Items"].toArray(), seriesId, seasonId);
     });
 }
@@ -260,7 +266,7 @@ void EmbyClient::fetchLatest(int limit, const QString &parentId,
                               const QString &includeTypes, const QString &tag) {
     QUrlQuery query;
     query.addQueryItem("Limit", QString::number(limit));
-    query.addQueryItem("Fields", EmbyFields::Card);
+    query.addQueryItem("Fields", EmbyFields::CardWithUser);
     query.addQueryItem("ImageTypeLimit", "1");
     query.addQueryItem("EnableTotalRecordCount", "false");
     if (!parentId.isEmpty())
@@ -279,10 +285,11 @@ void EmbyClient::fetchSimilar(const QString &includeTypes, const QString &exclud
     query.addQueryItem("UserId", m_userId);
     query.addQueryItem("IncludeItemTypes", includeTypes);
     query.addQueryItem("Limit", QString::number(limit));
-    query.addQueryItem("Fields", EmbyFields::Card);
+    query.addQueryItem("Fields", EmbyFields::CardWithUser);
     query.addQueryItem("ImageTypeLimit", "1");
 
     getJson("/emby/Items/" + excludeId + "/Similar", query, [this, excludeId](const QJsonDocument &doc) {
+        if (doc.isNull()) return;   // 同上, 下游填 m_similarCache
         QJsonArray items = doc.isArray() ? doc.array() : doc.object()["Items"].toArray();
         emit similarFetched(items, excludeId);
     });
@@ -293,7 +300,7 @@ void EmbyClient::fetchPersonFilms(const QString &personId, const QString &includ
     query.addQueryItem("Recursive", "true");
     query.addQueryItem("PersonIds", personId);
     query.addQueryItem("IncludeItemTypes", includeTypes);
-    query.addQueryItem("Fields", EmbyFields::Card);
+    query.addQueryItem("Fields", EmbyFields::CardWithUser);
     query.addQueryItem("ImageTypeLimit", "1");
     query.addQueryItem("SortBy", "SortName");
     query.addQueryItem("SortOrder", "Ascending");
@@ -634,6 +641,7 @@ void EmbyClient::fetchItemsFiltered(const FetchParams &p) {
         query.addQueryItem("StartIndex", QString::number(p.startIndex));
 
     getJson("/emby/Users/" + m_userId + "/Items", query, [this, p](const QJsonDocument &doc) {
+        if (doc.isNull()) return;   // 同上, onItemsFetched 第一行就 putItems
         QJsonObject obj = doc.object();
         int total = obj.contains("TotalRecordCount") ? obj["TotalRecordCount"].toInt() : -1;
         emit itemsFetched(obj["Items"].toArray(), p.parentId, p.cacheKey(), total);
@@ -696,7 +704,7 @@ void EmbyClient::fetchSuggestionsLatest(const QString &parentId, const QString &
     QUrlQuery query;
     query.addQueryItem("Limit", "20");
     query.addQueryItem("ParentId", parentId);
-    query.addQueryItem("Fields", EmbyFields::Card);
+    query.addQueryItem("Fields", EmbyFields::CardWithUser);
     query.addQueryItem("ImageTypeLimit", "1");
     query.addQueryItem("EnableTotalRecordCount", "false");
     if (!includeTypes.isEmpty())

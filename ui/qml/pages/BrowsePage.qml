@@ -281,6 +281,10 @@ HdrPqOverlay {
             required property string year
             required property string itemType            // 播放钮判断能不能播
             required property var playbackPositionTicks  // 电影续播位置
+            // 电视库的「最新」返回的是 Episode, 直接播时得靠这两个补同季播放列表,
+            // 否则播放器没有上下集、片尾也不连播 (Nav.playCard 内部按 itemType 取舍)
+            required property string seriesId
+            required property string seasonId
             width: 150; height: 270
             radius: 6
             color: "transparent"
@@ -316,7 +320,9 @@ HdrPqOverlay {
                                 itemId: itemId,
                                 itemName: itemName,
                                 itemType: itemType,
-                                startTicks: playbackPositionTicks || 0
+                                startTicks: playbackPositionTicks || 0,
+                                seriesId: seriesId,
+                                seasonId: seasonId
                             })
                         }
                     }
