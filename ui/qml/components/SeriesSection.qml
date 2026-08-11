@@ -122,6 +122,12 @@ ColumnLayout {
             orientation: ListView.Horizontal
             spacing: 10
             clip: true
+            interactive: false
+
+            SmoothWheelScroll {
+                flickable: seasonListView
+                orientation: Qt.Horizontal
+            }
 
             delegate: Item {
                 required property string imageUrl

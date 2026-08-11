@@ -13,6 +13,7 @@ StyledPopup {
     padding: 0
     popupRadius: 12
     bgColor: Theme.panelDeep
+    background: Item {}
 
     property int currentTab: 0
     property string listeningKey: ""
@@ -83,7 +84,7 @@ StyledPopup {
         }
     }
 
-    contentItem: Item {
+    contentItem: HdrPqOverlay {
         id: _contentRoot
         focus: true
 
@@ -102,12 +103,16 @@ StyledPopup {
             root.listeningKey = ""
         }
 
-        HdrPqOverlay {
+        Rectangle {
             anchors.fill: parent
+            radius: root.popupRadius
+            color: root.bgColor
+            border { color: Theme.active; width: 1 }
+        }
 
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 0
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 0
 
             // ── Header ──
             Rectangle {
@@ -161,6 +166,8 @@ StyledPopup {
                 interactive: false
                 contentWidth: _content.width
                 contentHeight: _content.height + 24
+
+                SmoothWheelScroll { flickable: _flick }
 
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
@@ -470,8 +477,7 @@ StyledPopup {
                     }
                 }
             }
-            }  // ColumnLayout
-        }  // HdrPqOverlay
+        }  // ColumnLayout
     }
 
     onListeningKeyChanged: { if (root.listeningKey !== "") _capTimer.start() }

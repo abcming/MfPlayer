@@ -41,7 +41,9 @@ StyledPopup {
             model: root.serverListModel
             clip: true
             spacing: 4
-            interactive: count > 4
+            interactive: false
+
+            SmoothWheelScroll { flickable: serverListView }
 
             delegate: Rectangle {
                 required property var modelData

@@ -308,6 +308,9 @@ Item {
                     implicitHeight: Math.min(contentHeight, 200)
                     clip: true; spacing: 2
                     model: _versionSources
+                    interactive: false
+
+                    SmoothWheelScroll { flickable: parent }
 
                     delegate: ItemDelegate {
                         required property var modelData
@@ -392,6 +395,9 @@ Item {
                     model: subtitleModel
                     clip: true
                     spacing: 2
+                    interactive: false
+
+                    SmoothWheelScroll { flickable: subtitleList }
 
                     delegate: ItemDelegate {
                         required property var modelData
@@ -467,6 +473,9 @@ Item {
                     model: audioModel
                     clip: true
                     spacing: 2
+                    interactive: false
+
+                    SmoothWheelScroll { flickable: audioList }
 
                     delegate: ItemDelegate {
                         required property var modelData
@@ -541,6 +550,9 @@ Item {
                     model: Playback.chapters || []
                     clip: true
                     spacing: 2
+                    interactive: false
+
+                    SmoothWheelScroll { flickable: parent }
 
                     delegate: ItemDelegate {
                         required property var modelData
@@ -644,6 +656,9 @@ Item {
                 model: playlistData
                 clip: true
                 spacing: 4
+                interactive: false
+
+                SmoothWheelScroll { flickable: playlistList }
 
                 delegate: Rectangle {
                     required property var modelData

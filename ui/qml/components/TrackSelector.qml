@@ -155,6 +155,9 @@ Item {
             clip: true
             spacing: 2
             model: root.filteredModel
+            interactive: false
+
+            SmoothWheelScroll { flickable: parent }
 
             delegate: ItemDelegate {
                 id: trackItem

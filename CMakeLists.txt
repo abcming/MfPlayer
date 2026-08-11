@@ -176,6 +176,7 @@ qt_add_qml_module(mfplayer_app
         ui/qml/components/HorizontalMediaRow.qml
         ui/qml/components/Icon.qml
         ui/qml/components/StyledPopup.qml
+        ui/qml/components/SmoothWheelScroll.qml
         ui/qml/components/StudiosSection.qml
         ui/qml/components/PersonBioSection.qml
         ui/qml/components/SimilarItemsSection.qml

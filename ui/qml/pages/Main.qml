@@ -187,11 +187,7 @@ ApplicationWindow {
             NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 150 }
         }
 
-        background: Rectangle {
-            radius: 12
-            color: Theme.panel
-            border { color: Theme.active; width: 1 }
-        }
+        background: Item {}
 
         contentItem: Item {
             // Lock implicit width so the Dialog stays at 400 regardless of
@@ -200,6 +196,14 @@ ApplicationWindow {
             // Popup implicitWidth → Dialog expands, chasing the close button.
             implicitWidth: loginDialog.width
             clip: true
+
+            Rectangle {
+                z: -1
+                anchors.fill: parent
+                radius: 12
+                color: Theme.panel
+                border { color: Theme.active; width: 1 }
+            }
 
             layer.enabled: typeof _hdrActive !== "undefined" && _hdrActive
             layer.format: ShaderEffectSource.RGBA16F
@@ -429,15 +433,19 @@ ApplicationWindow {
             NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 150 }
         }
 
-        background: Rectangle {
-            radius: 8
-            color: Theme.panel
-            border { color: Theme.active; width: 1 }
-        }
+        background: Item {}
 
         contentItem: Item {
             implicitWidth: globalErrorDialog.width
             clip: true
+
+            Rectangle {
+                z: -1
+                anchors.fill: parent
+                radius: 8
+                color: Theme.panel
+                border { color: Theme.active; width: 1 }
+            }
 
             layer.enabled: typeof _hdrActive !== "undefined" && _hdrActive
             layer.format: ShaderEffectSource.RGBA16F
