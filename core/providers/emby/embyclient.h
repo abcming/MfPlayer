@@ -58,6 +58,9 @@ public:
     Q_INVOKABLE void logout();
     void setSkipSslVerify(bool skip);
 
+    // 退出专用: 同步把在飞的请求跑完。见 CurlEngine::flush
+    void flushPendingRequests(int timeoutMs);
+
     // Resolve a relative API path to full URL (e.g. "/emby/Items/..." → "http://server/emby/Items/...")
     Q_INVOKABLE QString imageUrl(const QString &relativePath) const {
         if (relativePath.isEmpty()) return {};

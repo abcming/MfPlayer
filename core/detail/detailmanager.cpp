@@ -17,6 +17,33 @@ static QJsonArray sortByIndexNumber(QJsonArray arr) {
     return result;
 }
 
+// 相似推荐 / 人物作品的整段结果另存在 m_similarCache 里 (不是 CacheStore)。
+// 收藏、已看变更后只改 live model 是不够的: 进另一个详情页再返回时,
+// browseItem 会用 m_similarCache 里的旧数据重新 setItems, 状态就回滚了
+static void patchUserDataInCache(QHash<QString, QJsonArray> &cache, const QString &itemId,
+                                 const QString &fieldName, bool value) {
+    for (auto it = cache.begin(); it != cache.end(); ++it) {
+        QJsonArray &arr = it.value();
+        for (int i = 0; i < arr.size(); ++i) {
+            QJsonObject obj = arr[i].toObject();
+            if (obj["Id"].toString() != itemId) continue;
+            QJsonObject ud = obj["UserData"].toObject();
+            if (fieldName == "isFavorite") {
+                ud["IsFavorite"] = value;
+            } else {
+                ud["Played"] = value;
+                if (value) {
+                    ud["PlaybackPositionTicks"] = 0;
+                    ud["PlayedPercentage"] = 0;
+                }
+            }
+            obj["UserData"] = ud;
+            arr[i] = obj;
+            return;   // 同 CacheStore::updateItemFieldInCache: 命中即停
+        }
+    }
+}
+
 DetailManager::DetailManager(EmbyClient *emby, CacheStore *cache, QObject *parent)
     : QObject(parent)
     , m_emby(emby)
@@ -68,6 +95,7 @@ DetailManager::DetailManager(EmbyClient *emby, CacheStore *cache, QObject *paren
         m_episodeModel->updateItemByRoleName(itemId, "played", played);
         m_personMoviesModel->updateItemByRoleName(itemId, "played", played);
         m_personSeriesModel->updateItemByRoleName(itemId, "played", played);
+        patchUserDataInCache(m_similarCache, itemId, "played", played);
         // Re-fetch resume so fully-played items disappear from Continue Watching.
         // The server-side /Items/Resume endpoint naturally excludes items with 0 progress.
         m_emby->fetchResume(12);
@@ -87,6 +115,7 @@ DetailManager::DetailManager(EmbyClient *emby, CacheStore *cache, QObject *paren
         m_episodeModel->updateItemByRoleName(itemId, "isFavorite", isFavorite);
         m_personMoviesModel->updateItemByRoleName(itemId, "isFavorite", isFavorite);
         m_personSeriesModel->updateItemByRoleName(itemId, "isFavorite", isFavorite);
+        patchUserDataInCache(m_similarCache, itemId, "isFavorite", isFavorite);
         emit favoriteChanged(itemId, isFavorite);
     });
 

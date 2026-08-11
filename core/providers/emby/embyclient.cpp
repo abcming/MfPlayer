@@ -88,6 +88,10 @@ void EmbyClient::setSkipSslVerify(bool skip) {
     m_curl->setSkipSslVerify(skip);
 }
 
+void EmbyClient::flushPendingRequests(int timeoutMs) {
+    m_curl->flush(timeoutMs);
+}
+
 void EmbyClient::logout() {
     m_accessToken.clear();
     m_userId.clear();

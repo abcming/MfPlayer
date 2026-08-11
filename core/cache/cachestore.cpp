@@ -411,6 +411,30 @@ void CacheStore::updateItemFieldInCache(const QString &itemId, const QString &fi
             return;  // item updated — stop scanning (was missing outer break, bug)
         }
     }
+
+    // 分集不在 m_itemsCache 里 —— 它们由 putEpisodes 单独存进 m_episodesCache。
+    // 不扫这里的话, 在详情页给某一集点了收藏/已看, 切到别的季再切回来,
+    // fetchEpisodes 命中整季缓存 (命中即 return, 不发网络请求), 状态就回滚了
+    for (auto it = m_episodesCache.begin(); it != m_episodesCache.end(); ++it) {
+        QJsonArray &eps = it.value();
+        for (int i = 0; i < eps.size(); ++i) {
+            QJsonObject obj = eps[i].toObject();
+            if (obj["Id"].toString() != itemId) continue;
+            QJsonObject ud = obj["UserData"].toObject();
+            if (fieldName == "isFavorite")
+                ud["IsFavorite"] = value.toBool();
+            else if (fieldName == "played") {
+                ud["Played"] = value.toBool();
+                if (value.toBool()) {
+                    ud["PlaybackPositionTicks"] = 0;
+                    ud["PlayedPercentage"] = 0;
+                }
+            }
+            obj["UserData"] = ud;
+            eps[i] = obj;
+            return;
+        }
+    }
 }
 
 void CacheStore::clearAll() {

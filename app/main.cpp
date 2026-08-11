@@ -126,7 +126,14 @@ int main(int argc, char *argv[]) {
     // 退出时先在所有对象存活期间上报并停止播放。QObject children 按构造顺序析构，
     // serverMgr (EmbyClient/CacheStore) 先于 playbackCtrl 死亡 —— 若播放中退出,
     // ~PlaybackController 里的 stop() 会经悬垂指针调用 m_emby/m_cache。
-    QObject::connect(&app, &QCoreApplication::aboutToQuit, playbackCtrl, &PlaybackController::stop);
+    // 上报只是把请求塞进 curl multi 再排一个 QTimer, 而 aboutToQuit 发出后
+    // 事件循环马上就返回、不再处理普通 timer —— 不同步排空的话这个请求会被
+    // ~CurlEngine 连同队列一起丢掉, 服务端进度停在上一次周期上报点, PlaySession
+    // 还会一直挂着直到服务器自己超时。1.5s 足够一个局域网 POST 打完来回。
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, playbackCtrl, [playbackCtrl, serverMgr]() {
+        playbackCtrl->stop();
+        serverMgr->emby()->flushPendingRequests(1500);
+    });
 
     qmlEngine.rootContext()->setContextProperty("Playback", playbackCtrl);
     qmlEngine.rootContext()->setContextProperty("Library", libraryBrowser);

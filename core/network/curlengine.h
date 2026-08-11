@@ -42,6 +42,11 @@ public:
 
     void cancel(CURL *easy);
 
+    // 同步把在飞的请求跑完 —— 只给退出路径用。平时的驱动靠 tick() 的 10ms 轮询,
+    // 但 aboutToQuit 发出后事件循环就不再处理普通 timer 了, 那之后新入队的请求
+    // (最后一次播放进度上报) 永远等不到下一次 tick, 会被 ~CurlEngine 直接丢弃。
+    void flush(int timeoutMs);
+
 private:
     struct Task {
         Callback   callback;

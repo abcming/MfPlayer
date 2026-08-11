@@ -1,4 +1,5 @@
 #include "curlengine.h"
+#include <QElapsedTimer>
 #include <QPointer>
 
 // ─────────────────────────────────────────────
@@ -59,6 +60,22 @@ CurlEngine::~CurlEngine()
         delete it.value();
     }
     curl_multi_cleanup(m_multi);
+}
+
+void CurlEngine::flush(int timeoutMs)
+{
+    QElapsedTimer t;
+    t.start();
+    QPointer<CurlEngine> guard(this);
+    while (!m_tasks.isEmpty() && t.elapsed() < timeoutMs) {
+        tick();                 // 复用收割逻辑, 它自带 QPointer 守卫
+        if (!guard) return;     // 回调里销毁了自己
+        if (m_tasks.isEmpty())
+            break;
+        // 让出时间等 socket 就绪, 否则纯空转烧 CPU
+        int numfds = 0;
+        curl_multi_wait(m_multi, nullptr, 0, 20, &numfds);
+    }
 }
 
 void CurlEngine::setMaxConnections(long n)
