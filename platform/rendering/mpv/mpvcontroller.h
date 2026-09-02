@@ -94,6 +94,9 @@ private:
     bool handleNodeProperty(const char *name, mpv_event_property *prop);
     static void wakeup(void *ctx);
     static QVariant mpvNodeToVariant(const mpv_node *node);
+#ifdef Q_OS_WIN
+    void updateWindowsPowerState();
+#endif
 
     // ── Thread affinity ─────────────────────────────────────────────
     // ALL member variables below MUST be accessed ONLY from the main thread,
@@ -115,6 +118,9 @@ private:
     double m_position = 0;
     double m_duration = 0;
     bool m_playing = false;
+#ifdef Q_OS_WIN
+    bool m_sleepInhibited = false;
+#endif
     bool m_eofReached = false;  // eof-reached 边沿检测, 防 endOfFile 重复触发
     std::atomic<bool> m_hasVideo{false};
     // m_volume / m_speed 只由 mpv 的属性观察事件更新 —— 它们是"mpv 现在是什么",

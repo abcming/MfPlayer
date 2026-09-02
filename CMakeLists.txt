@@ -230,6 +230,7 @@ if(WIN32)
         Qt6::Gui
         Qt6::GuiPrivate
         mpv
+        kernel32
         dwmapi
         d3d11
         CURL::libcurl

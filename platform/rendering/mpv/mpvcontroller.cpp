@@ -43,8 +43,20 @@ struct mpv_vulkan_init_params {
 #include <QMutex>
 #include <QMutexLocker>
 #include <cstring>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 MpvController::MpvController(QObject *parent) : QObject(parent) {
+#ifdef Q_OS_WIN
+  // libmpv renders into Qt's window, so mpv's native Win32 video-output
+  // backend cannot manage the system execution state for us.
+  connect(this, &MpvController::playingChanged, this,
+          &MpvController::updateWindowsPowerState);
+  connect(this, &MpvController::hasVideoChanged, this,
+          &MpvController::updateWindowsPowerState);
+#endif
+
   m_mpv = mpv_create();
   if (!m_mpv) {
     qWarning() << "MpvController: mpv_create failed";
@@ -127,6 +139,16 @@ MpvController::MpvController(QObject *parent) : QObject(parent) {
 }
 
 MpvController::~MpvController() {
+#ifdef Q_OS_WIN
+  // The execution state belongs to the calling thread. All controller state
+  // changes and destruction run on the main thread, so clear it here as a
+  // final safeguard even though stop() normally already did so.
+  if (m_sleepInhibited) {
+    SetThreadExecutionState(ES_CONTINUOUS);
+    m_sleepInhibited = false;
+  }
+#endif
+
   // Serialize with VideoRenderNode::render() on the render thread.
   // The lock ensures no render thread is mid-frame when we free the context.
   {
@@ -307,6 +329,29 @@ double MpvController::duration() const { return m_duration; }
 bool MpvController::playing() const { return m_playing; }
 int MpvController::volume() const { return m_volume; }
 bool MpvController::hasVideo() const { return m_hasVideo; }
+
+#ifdef Q_OS_WIN
+void MpvController::updateWindowsPowerState() {
+  // Checking hasVideo prevents mpv's initial pause=false observation while
+  // idle from being mistaken for active playback.
+  const bool inhibit =
+      m_playing && m_hasVideo.load(std::memory_order_relaxed);
+  if (inhibit == m_sleepInhibited)
+    return;
+
+  const EXECUTION_STATE flags =
+      inhibit ? static_cast<EXECUTION_STATE>(
+                    ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)
+              : ES_CONTINUOUS;
+  if (SetThreadExecutionState(flags) == 0) {
+    qWarning() << "MpvController: SetThreadExecutionState failed:"
+               << GetLastError();
+    return;
+  }
+
+  m_sleepInhibited = inhibit;
+}
+#endif
 
 void MpvController::play(const QString &url, const QString &referrer,
                          double startSeconds) {
