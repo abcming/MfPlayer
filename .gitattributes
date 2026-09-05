@@ -1,0 +1,4 @@
+# mpv 头文件从 Windows 侧 cp 回来时会带上 CRLF（见 CLAUDE.md「头文件同步 cp 到
+# mpv-msvc/include」）。内容一个字节没变，diff 却是 3000+ 行满屏红绿。
+# 强制按 LF 入库，cp 进来的 CRLF 在 add 时自动归一。
+third_party/mpv-msvc/include/**/*.h text eol=lf
