@@ -245,9 +245,11 @@ ioPool().start([guard, ...]() {
 
 ## 提交规范
 
-- **推送出去的东西一律不出现个人名字**。commit message、代码注释、文档全算在内。
+- **推送出去的东西不出现我们两个的真名**。commit message、代码注释、文档全算在内。
   需要标注来源时用中性表述：「实测拍板」「实机验证通过」「判断：……」，结论照写不变。
-- 署名固定 `Co-Authored-By: Claude <noreply@anthropic.com>`。
+- 署名用当前会话的模型标识，例如
+  `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`，可带 `Claude-Session` 行。
+  **模型名不算个人名字** —— 早前写成「固定 Claude」是把上一条收窄理解了。
 - 破例发现得整改：工作区直接改，已推送的要重写历史 + force push，成本高，写之前就别写进去。
 
 ## 构建与部署
