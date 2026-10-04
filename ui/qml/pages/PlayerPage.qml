@@ -304,13 +304,14 @@ Item {
                 width: 260; padding: 6
 
                 ListView {
+                    id: versionList
                     anchors.fill: parent
                     implicitHeight: Math.min(contentHeight, 200)
                     clip: true; spacing: 2
                     model: _versionSources
                     interactive: false
 
-                    SmoothWheelScroll { flickable: parent }
+                    SmoothWheelScroll { flickable: versionList }
 
                     delegate: ItemDelegate {
                         required property var modelData
@@ -545,6 +546,7 @@ Item {
                 padding: 6
 
                 ListView {
+                    id: chapterList
                     anchors.fill: parent
                     implicitHeight: Math.min(contentHeight, 300)
                     model: Playback.chapters || []
@@ -552,7 +554,7 @@ Item {
                     spacing: 2
                     interactive: false
 
-                    SmoothWheelScroll { flickable: parent }
+                    SmoothWheelScroll { flickable: chapterList }
 
                     delegate: ItemDelegate {
                         required property var modelData

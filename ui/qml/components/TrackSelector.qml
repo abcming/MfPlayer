@@ -150,6 +150,7 @@ Item {
         bgColor: Theme.panel
 
         ListView {
+            id: trackList
             anchors.fill: parent
             implicitHeight: Math.min(contentHeight, 200)
             clip: true
@@ -157,7 +158,7 @@ Item {
             model: root.filteredModel
             interactive: false
 
-            SmoothWheelScroll { flickable: parent }
+            SmoothWheelScroll { flickable: trackList }
 
             delegate: ItemDelegate {
                 id: trackItem
