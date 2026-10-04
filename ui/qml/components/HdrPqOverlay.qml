@@ -19,7 +19,8 @@ Item {
     property real sdrWhiteNits: Server.settings.sdrWhiteNits
     readonly property bool hdrActive: typeof _hdrActive !== "undefined" && _hdrActive
 
-    default property alias data: _content.data
+    // 别叫 data: 那会覆盖 Item.data, 启动时报 propertyCache "overrides a member"
+    default property alias contentData: _content.data
 
     Item {
         id: _content

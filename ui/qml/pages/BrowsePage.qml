@@ -27,15 +27,6 @@ HdrPqOverlay {
     }
 
     Connections {
-        target: Library
-        function onPersonBrowseStarted(name) {
-            browseRoot.currentView = "library"
-            browseRoot.showSuggestions = false
-            libraryTabs.selectedIndex = 0
-        }
-    }
-
-    Connections {
         target: Server
         function onPlayError(msg) {
             _lastError = msg || Str.playFailed
