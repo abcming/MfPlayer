@@ -132,6 +132,10 @@ Flickable {
                 listModel: modelData.model
                 delegate: homeFlick.latestCardDelegate
                 width: homeCol.width
+                // 17 行左右全部常驻, 视口外的整行不画。别改成按视口挂卸 model ——
+                // 那样每滚进一行就同步现建 12 张卡, 滚动一顿一顿的
+                culled: y + height < homeFlick.contentY
+                        || y > homeFlick.contentY + homeFlick.height
             }
         }
     }

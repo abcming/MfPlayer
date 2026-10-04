@@ -68,22 +68,28 @@ Column {
                     externalHover: _simHover.hovered
                     embyUrl: Server.emby.imageUrl(imageUrl)
 
-                    // 封面正中的播放钮 —— 剧集会先问 NextUp 再起播
-                    CardPlayButton {
-                        visible: _simHover.hovered && Nav.isPlayable(simCard.itemType)
-                        onClicked: Nav.playCard({
-                            itemId: simCard.itemId,
-                            itemName: simCard.itemName,
-                            itemType: simCard.itemType,
-                            startTicks: simCard.playbackPositionTicks || 0
-                        })
-                    }
+                    // 封面正中的播放钮 —— 剧集会先问 NextUp 再起播。
+                    // 钮都是 hover 才建 (每个 Icon 常驻 25 个 Shape); 外包一层 Item
+                    // 是因为 Loader 定了尺寸会把加载物拉成同尺寸, 角上的 Row 就不靠右了
+                    Loader {
+                        anchors.fill: parent
+                        active: _simHover.hovered && Nav.isPlayable(simCard.itemType)
+                        sourceComponent: Item {
+                            CardPlayButton {
+                                onClicked: Nav.playCard({
+                                    itemId: simCard.itemId,
+                                    itemName: simCard.itemName,
+                                    itemType: simCard.itemType,
+                                    startTicks: simCard.playbackPositionTicks || 0
+                                })
+                            }
 
-                    CardActionButtons {
-                        visible: _simHover.hovered && Nav.isPlayable(simCard.itemType)
-                        itemId: simCard.itemId
-                        isFavorite: simCard.isFavorite
-                        played: simCard.played
+                            CardActionButtons {
+                                itemId: simCard.itemId
+                                isFavorite: simCard.isFavorite
+                                played: simCard.played
+                            }
+                        }
                     }
                 }
 

@@ -227,26 +227,31 @@ ColumnLayout {
                         ? Server.emby.imageUrl(imageUrl)
                         : root._episodeFallbackUrl
 
-                    // 封面正中的播放钮 —— 点封面本身仍是进单集详情页, 不改原行为
-                    CardPlayButton {
-                        visible: _epHover.hovered
-                        onClicked: Nav.playCard({
-                            itemId: epCard.itemId,
-                            itemName: epCard.itemName,
-                            itemType: Str.typeEpisode,
-                            seriesName: root.itemData.Name || "",
-                            indexNumber: epCard.indexNumber,
-                            startTicks: epCard.playbackPositionTicks || 0,
-                            seriesId: epCard.seriesId,
-                            seasonId: epCard.seasonId
-                        })
-                    }
+                    // 封面正中的播放钮 —— 点封面本身仍是进单集详情页, 不改原行为。
+                    // hover 才建, 外包 Item 的理由同 SimilarItemsSection
+                    Loader {
+                        anchors.fill: parent
+                        active: _epHover.hovered
+                        sourceComponent: Item {
+                            CardPlayButton {
+                                onClicked: Nav.playCard({
+                                    itemId: epCard.itemId,
+                                    itemName: epCard.itemName,
+                                    itemType: Str.typeEpisode,
+                                    seriesName: root.itemData.Name || "",
+                                    indexNumber: epCard.indexNumber,
+                                    startTicks: epCard.playbackPositionTicks || 0,
+                                    seriesId: epCard.seriesId,
+                                    seasonId: epCard.seasonId
+                                })
+                            }
 
-                    CardActionButtons {
-                        visible: _epHover.hovered
-                        itemId: epCard.itemId
-                        isFavorite: epCard.isFavorite
-                        played: epCard.played
+                            CardActionButtons {
+                                itemId: epCard.itemId
+                                isFavorite: epCard.isFavorite
+                                played: epCard.played
+                            }
+                        }
                     }
                 }
 

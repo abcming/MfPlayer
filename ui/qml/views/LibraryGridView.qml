@@ -16,10 +16,12 @@ GridView {
     // Studios (5) and episodes (6) use landscape cards, movies/series use portrait posters
     property bool landscapeMode: Library.currentTab === 5 || Library.currentTab === 6
     cellHeight: landscapeMode ? 180 : 285
-    // ~28 rows off-screen (5000px). Keeps ~224 delegates alive
-    // to survive extreme scroll velocity (25 rows/frame @ 0.5s full-scroll).
-    displayMarginBeginning: 5000
-    displayMarginEnd: 5000
+    // ~28 rows off-screen (5000px) stay alive to survive extreme scroll
+    // velocity (25 rows/frame @ 0.5s full-scroll). Must be cacheBuffer, not
+    // displayMargin: displayMargin delegates are *drawn* every frame (maximized
+    // = ~700 cards rendered → scroll jank), cacheBuffer ones are created
+    // (asynchronously) but culled until they enter the viewport.
+    cacheBuffer: 5000
     leftMargin: 0
     rightMargin: 42
 
@@ -203,6 +205,7 @@ GridView {
     // one HoverHandler per delegate — half the binding re-evaluation on recycle
     // compared to the dual-visible-tree approach.
     delegate: Item {
+        id: card
         required property string imageUrl
         required property string itemName
         required property string year
@@ -251,19 +254,24 @@ GridView {
                 embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
 
                 // 封面正中的播放钮。isPlayable 天然挡掉流派 (Tab 4) 和工作室 (Tab 5) ——
-                // 那两个的 itemType 不是可播条目。剧集会先问 NextUp 再起播
-                CardPlayButton {
-                    visible: _h.hovered && Nav.isPlayable(itemType)
-                    onClicked: Nav.playCard({
-                        itemId: itemId,
-                        itemName: itemName,
-                        itemType: itemType,
-                        seriesName: seriesName,
-                        indexNumber: indexNumber,
-                        startTicks: playbackPositionTicks || 0,
-                        seriesId: seriesId,
-                        seasonId: seasonId
-                    })
+                // 那两个的 itemType 不是可播条目。剧集会先问 NextUp 再起播。
+                // hover 才建: 每个 Icon 常驻 25 个 Shape, 三个钮常驻就是每卡 75 个
+                Loader {
+                    anchors.centerIn: parent
+                    z: 20
+                    active: _h.hovered && Nav.isPlayable(card.itemType)
+                    sourceComponent: CardPlayButton {
+                        onClicked: Nav.playCard({
+                            itemId: card.itemId,
+                            itemName: card.itemName,
+                            itemType: card.itemType,
+                            seriesName: card.seriesName,
+                            indexNumber: card.indexNumber,
+                            startTicks: card.playbackPositionTicks || 0,
+                            seriesId: card.seriesId,
+                            seasonId: card.seasonId
+                        })
+                    }
                 }
             }
             Label {
@@ -281,29 +289,30 @@ GridView {
             }
         }
 
-        Row {
-            id: actionRow
+        Loader {
             anchors {
                 top: parent.top
                 right: parent.right
                 margins: grid.landscapeMode ? 6 : 10
             }
-            spacing: 4
-            visible: _h.hovered && (grid.landscapeMode
+            active: _h.hovered && (grid.landscapeMode
                 ? Library.currentTab === 6
                 : (Library.currentTab !== 4 && Library.currentTab !== 5))
             z: 10
-            Rectangle {
-                width: 28; height: 28; radius: 14
-                color: _fm.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                Icon { anchors.centerIn: parent; name: isFavorite ? "heart_filled" : "heart"; color: isFavorite ? Theme.primary : Theme.textPrimary; size: 16 }
-                MouseArea { id: _fm; anchors.fill: parent; hoverEnabled: true; onClicked: { if (isFavorite) Detail.removeFavorite(itemId); else Detail.addFavorite(itemId) } }
-            }
-            Rectangle {
-                width: 28; height: 28; radius: 14
-                color: _pm.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                Icon { anchors.centerIn: parent; name: "check"; color: played ? Theme.primary : Theme.textPrimary; size: 16 }
-                MouseArea { id: _pm; anchors.fill: parent; hoverEnabled: true; onClicked: { if (played) Detail.markUnplayed(itemId); else Detail.markPlayed(itemId) } }
+            sourceComponent: Row {
+                spacing: 4
+                Rectangle {
+                    width: 28; height: 28; radius: 14
+                    color: _fm.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
+                    Icon { anchors.centerIn: parent; name: card.isFavorite ? "heart_filled" : "heart"; color: card.isFavorite ? Theme.primary : Theme.textPrimary; size: 16 }
+                    MouseArea { id: _fm; anchors.fill: parent; hoverEnabled: true; onClicked: { if (card.isFavorite) Detail.removeFavorite(card.itemId); else Detail.addFavorite(card.itemId) } }
+                }
+                Rectangle {
+                    width: 28; height: 28; radius: 14
+                    color: _pm.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
+                    Icon { anchors.centerIn: parent; name: "check"; color: card.played ? Theme.primary : Theme.textPrimary; size: 16 }
+                    MouseArea { id: _pm; anchors.fill: parent; hoverEnabled: true; onClicked: { if (card.played) Detail.markUnplayed(card.itemId); else Detail.markPlayed(card.itemId) } }
+                }
             }
         }
     }

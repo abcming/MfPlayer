@@ -102,6 +102,7 @@ HdrPqOverlay {
 
     property Component resumeCardDelegate: Component {
         Rectangle {
+            id: resumeCard
             required property string itemId
             required property string imageUrl
             required property string itemType
@@ -182,64 +183,73 @@ HdrPqOverlay {
                         }
                     }
 
-                    // 封面正中的播放钮 —— 点了直接起播, 不用先进详情页
-                    CardPlayButton {
-                        visible: _resumeHover.hovered
-                        onClicked: Nav.playCard({
-                            itemId: itemId,
-                            itemName: itemName,
-                            itemType: itemType,
-                            seriesName: seriesName,
-                            indexNumber: indexNumber,
-                            startTicks: playbackPositionTicks || 0,
-                            seriesId: seriesId,
-                            seasonId: seasonId
-                        })
+                    // 封面正中的播放钮 —— 点了直接起播, 不用先进详情页。
+                    // 这几个钮都是 hover 才建: 每个 Icon 常驻 25 个 Shape, 三个钮常驻
+                    // 就是每卡 75 个, 而同一时刻只有一张卡在 hover
+                    Loader {
+                        anchors.centerIn: parent
+                        z: 20
+                        active: _resumeHover.hovered
+                        sourceComponent: CardPlayButton {
+                            onClicked: Nav.playCard({
+                                itemId: resumeCard.itemId,
+                                itemName: resumeCard.itemName,
+                                itemType: resumeCard.itemType,
+                                seriesName: resumeCard.seriesName,
+                                indexNumber: resumeCard.indexNumber,
+                                startTicks: resumeCard.playbackPositionTicks || 0,
+                                seriesId: resumeCard.seriesId,
+                                seasonId: resumeCard.seasonId
+                            })
+                        }
                     }
 
                     // Action buttons (top-right corner)
-                    Row {
+                    Loader {
                         anchors { top: parent.top; right: parent.right; margins: 6 }
-                        spacing: 4
-                        visible: _resumeHover.hovered
+                        active: _resumeHover.hovered
                         z: 10
 
-                        Rectangle {
-                            width: 28; height: 28; radius: 14
-                            color: _resumeFavMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                            Icon {
-                                anchors.centerIn: parent
-                                name: isFavorite ? "heart_filled" : "heart"
-                                color: isFavorite ? Theme.primary : Theme.textPrimary
-                                size: 16
-                            }
-                            MouseArea {
-                                id: _resumeFavMa
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: {
-                                    if (isFavorite) Detail.removeFavorite(itemId)
-                                    else Detail.addFavorite(itemId)
+                        sourceComponent: Row {
+                            spacing: 4
+
+                            Rectangle {
+                                width: 28; height: 28; radius: 14
+                                color: _resumeFavMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
+                                Icon {
+                                    anchors.centerIn: parent
+                                    name: resumeCard.isFavorite ? "heart_filled" : "heart"
+                                    color: resumeCard.isFavorite ? Theme.primary : Theme.textPrimary
+                                    size: 16
+                                }
+                                MouseArea {
+                                    id: _resumeFavMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        if (resumeCard.isFavorite) Detail.removeFavorite(resumeCard.itemId)
+                                        else Detail.addFavorite(resumeCard.itemId)
+                                    }
                                 }
                             }
-                        }
 
-                        Rectangle {
-                            width: 28; height: 28; radius: 14
-                            color: _resumePlayMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                            Icon {
-                                anchors.centerIn: parent
-                                name: "check"
-                                color: played ? Theme.primary : Theme.textPrimary
-                                size: 16
-                            }
-                            MouseArea {
-                                id: _resumePlayMa
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: {
-                                    if (played) Detail.markUnplayed(itemId)
-                                    else Detail.markPlayed(itemId)
+                            Rectangle {
+                                width: 28; height: 28; radius: 14
+                                color: _resumePlayMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
+                                Icon {
+                                    anchors.centerIn: parent
+                                    name: "check"
+                                    color: resumeCard.played ? Theme.primary : Theme.textPrimary
+                                    size: 16
+                                }
+                                MouseArea {
+                                    id: _resumePlayMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        if (resumeCard.played) Detail.markUnplayed(resumeCard.itemId)
+                                        else Detail.markPlayed(resumeCard.itemId)
+                                    }
                                 }
                             }
                         }
@@ -273,6 +283,7 @@ HdrPqOverlay {
 
     property Component latestCardDelegate: Component {
         Rectangle {
+            id: latestCard
             required property string itemId
             required property string imageUrl
             required property bool isFavorite
@@ -313,63 +324,71 @@ HdrPqOverlay {
                         externalHover: _latestHover.hovered
                         embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
 
-                        // 封面正中的播放钮 —— 剧集会先问 NextUp 再起播
-                        CardPlayButton {
-                            visible: _latestHover.hovered && Nav.isPlayable(itemType)
-                            onClicked: Nav.playCard({
-                                itemId: itemId,
-                                itemName: itemName,
-                                itemType: itemType,
-                                startTicks: playbackPositionTicks || 0,
-                                seriesId: seriesId,
-                                seasonId: seasonId
-                            })
+                        // 封面正中的播放钮 —— 剧集会先问 NextUp 再起播。
+                        // hover 才建, 理由同 resumeCardDelegate
+                        Loader {
+                            anchors.centerIn: parent
+                            z: 20
+                            active: _latestHover.hovered && Nav.isPlayable(latestCard.itemType)
+                            sourceComponent: CardPlayButton {
+                                onClicked: Nav.playCard({
+                                    itemId: latestCard.itemId,
+                                    itemName: latestCard.itemName,
+                                    itemType: latestCard.itemType,
+                                    startTicks: latestCard.playbackPositionTicks || 0,
+                                    seriesId: latestCard.seriesId,
+                                    seasonId: latestCard.seasonId
+                                })
+                            }
                         }
                     }
 
                     // Action buttons (top-right corner)
-                    Row {
+                    Loader {
                         anchors { top: parent.top; right: parent.right; margins: 6 }
-                        spacing: 4
-                        visible: _latestHover.hovered
+                        active: _latestHover.hovered
                         z: 10
 
-                        Rectangle {
-                            width: 28; height: 28; radius: 14
-                            color: _latestFavMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                            Icon {
-                                anchors.centerIn: parent
-                                name: isFavorite ? "heart_filled" : "heart"
-                                color: isFavorite ? Theme.primary : Theme.textPrimary
-                                size: 16
-                            }
-                            MouseArea {
-                                id: _latestFavMa
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: {
-                                    if (isFavorite) Detail.removeFavorite(itemId)
-                                    else Detail.addFavorite(itemId)
+                        sourceComponent: Row {
+                            spacing: 4
+
+                            Rectangle {
+                                width: 28; height: 28; radius: 14
+                                color: _latestFavMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
+                                Icon {
+                                    anchors.centerIn: parent
+                                    name: latestCard.isFavorite ? "heart_filled" : "heart"
+                                    color: latestCard.isFavorite ? Theme.primary : Theme.textPrimary
+                                    size: 16
+                                }
+                                MouseArea {
+                                    id: _latestFavMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        if (latestCard.isFavorite) Detail.removeFavorite(latestCard.itemId)
+                                        else Detail.addFavorite(latestCard.itemId)
+                                    }
                                 }
                             }
-                        }
 
-                        Rectangle {
-                            width: 28; height: 28; radius: 14
-                            color: _latestPlayMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                            Icon {
-                                anchors.centerIn: parent
-                                name: "check"
-                                color: played ? Theme.primary : Theme.textPrimary
-                                size: 16
-                            }
-                            MouseArea {
-                                id: _latestPlayMa
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: {
-                                    if (played) Detail.markUnplayed(itemId)
-                                    else Detail.markPlayed(itemId)
+                            Rectangle {
+                                width: 28; height: 28; radius: 14
+                                color: _latestPlayMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
+                                Icon {
+                                    anchors.centerIn: parent
+                                    name: "check"
+                                    color: latestCard.played ? Theme.primary : Theme.textPrimary
+                                    size: 16
+                                }
+                                MouseArea {
+                                    id: _latestPlayMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        if (latestCard.played) Detail.markUnplayed(latestCard.itemId)
+                                        else Detail.markPlayed(latestCard.itemId)
+                                    }
                                 }
                             }
                         }
@@ -399,6 +418,7 @@ HdrPqOverlay {
 
     property Component personCardDelegate: Component {
         Rectangle {
+            id: personCard
             required property string itemId
             required property string imageUrl
             required property bool isFavorite
@@ -431,26 +451,28 @@ HdrPqOverlay {
                         embyUrl: Server.emby ? Server.emby.imageUrl(imageUrl) : ""
                     }
 
-                    // Favorite button (top-right corner)
-                    Rectangle {
+                    // Favorite button (top-right corner), hover 才建, 理由同 resumeCardDelegate
+                    Loader {
                         anchors { top: parent.top; right: parent.right; margins: 6 }
-                        width: 28; height: 28; radius: 14
-                        color: _personFavMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
-                        visible: _personHover.hovered
+                        active: _personHover.hovered
                         z: 10
-                        Icon {
-                            anchors.centerIn: parent
-                            name: isFavorite ? "heart_filled" : "heart"
-                            color: isFavorite ? Theme.primary : Theme.textPrimary
-                            size: 16
-                        }
-                        MouseArea {
-                            id: _personFavMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: {
-                                if (isFavorite) Detail.removeFavorite(itemId)
-                                else Detail.addFavorite(itemId)
+                        sourceComponent: Rectangle {
+                            width: 28; height: 28; radius: 14
+                            color: _personFavMa.containsMouse ? Qt.rgba(1,1,1,0.35) : Qt.rgba(0,0,0,0.45)
+                            Icon {
+                                anchors.centerIn: parent
+                                name: personCard.isFavorite ? "heart_filled" : "heart"
+                                color: personCard.isFavorite ? Theme.primary : Theme.textPrimary
+                                size: 16
+                            }
+                            MouseArea {
+                                id: _personFavMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    if (personCard.isFavorite) Detail.removeFavorite(personCard.itemId)
+                                    else Detail.addFavorite(personCard.itemId)
+                                }
                             }
                         }
                     }

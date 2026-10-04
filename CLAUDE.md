@@ -187,7 +187,7 @@ ioPool().start([guard, ...]() {
 - 媒体缓存: 内存 HashMap + SQLite 双层，内存优先，过期数据留作 fallback。SQL 写入走 DB Worker
 - 图片加载: CachedImage → CacheStore::providerUrl (内存缓存查命中 + 主线程解析路径, 无 stat) → ImageLoadQueue (max 3 concurrent) → ImageCacheProvider (reader 线程, 只解码)
 - RoundedImage: Stretch fill + roundedmask.frag shader 做 GPU 圆角, 不用 OpacityMask (无额外 FBO)
-- Icon: 23 个 MFIcon_* 全部常驻, visible 切换, 不用 Loader (避免切换延迟)
+- Icon: 23 个 MFIcon_* 全部常驻, visible 切换, 不用 Loader (避免切换延迟)。代价是每个 Icon 25 个 Shape —— 卡片上的 hover 钮因此整块走 Loader (见性能红线)
 - Flickable: 全部 `interactive: false`, 用 WheelHandler + NumberAnimation 模拟滚动 (统一手感)
 - 滑块防抖: hdrPeakBrightness/sdrWhiteNits/seekStep/windowSize 使用 200ms QTimer 防抖, 避免每次拖动像素写 QSettings
 - MediaModel::fromJson 的 BackdropImageTags 只解析一次，复用结果（减少 O(N) 次 QJsonObject key lookup）
@@ -306,6 +306,18 @@ cmake --build /root/myproject/mfplayer/build
     第一个源当 `MediaSourceId` 带进 PlaybackInfo 请求, Emby 就**只回那一个源** —— 拿它覆盖等于把
     详情里的全部版本抹成一个, 版本选择器只剩当前版本。详情页那条路吃 `itemData.MediaSources`
     看不出来, 卡片直接起播 (itemData 为 null) 才现原形 (2026-08)
+  - **视图的预建缓冲用 `cacheBuffer`, 别用 `displayMargin`** (2026-10)。Qt 源码 (qquickgridview.cpp
+    `setCulled`): displayMargin 范围里的 delegate **每帧照画**, cacheBuffer 范围里的只建不画、且异步孵化。
+    网格原来 displayMargin 5000, 最大化时七百来张卡每帧都在画 → 滚动掉帧。改 cacheBuffer 5000 后池子一样大,
+    6 月「极速拖滚动条来不及建」的问题不回来
+  - **卡片上 hover 才显示的钮 (播放 / 收藏 / 已看) 包在 `Loader { active: hovered }` 里** (2026-10)。
+    常驻的话每卡 3 个 Icon = 75 个 Shape, 首页 + 网格几百张卡就是几万个对象; 同一时刻只有一张卡在 hover。
+    Loader 定了尺寸会把加载物拉成同尺寸 —— 要么 Loader 只给锚点不给尺寸, 要么 sourceComponent 外包一层 Item。
+    组件内部取 delegate 数据走外层 id (`latestCard.itemId`), 新加卡片照这个写
+  - **首页「最新」行视口外只切 `culled` (ListView visible), 别按视口挂卸 model** (2026-10)。09-05 为治全屏卡顿
+    改过挂卸 model, 结果每滚进一行同步现建 12 张卡, 滚动一顿一顿。全屏卡顿那半靠 HorizontalMediaRow 的
+    `cacheBuffer: Screen.width - width + 200` (拉宽时新露出来的卡早已建好)。ListView 外那层定高 Item 别删:
+    Column 跳过 visible:false 的子项, 直接隐藏会塌行、culled 判断跟着变, 来回抖
   - PlayerControls: progressSlider.value 只在 `_lastSecond` 变化时更新。别移回每帧赋值
   - CacheStore: updateItemFieldInCache 找到 item 直接 `return`。别删外层 return
   - providerUrl / fetchImage: 不做 `QFile::exists()`。别加回 stat
