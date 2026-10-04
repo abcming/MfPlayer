@@ -40,8 +40,10 @@ struct mpv_vulkan_init_params {
 #include "platform/rendering/vulkandevice.h"
 #endif
 #include <QDebug>
+#include <QDir>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QStandardPaths>
 #include <cstring>
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -77,6 +79,15 @@ MpvController::MpvController(QObject *parent) : QObject(parent) {
   mpv_set_option_string(m_mpv, "interpolation", "yes");
   mpv_set_option_string(m_mpv, "tscale", "oversample");
   mpv_set_option_string(m_mpv, "deband", "yes");
+  // 编好的着色器落盘 (fork 的 libmpv gpu-next 路径接了 pl_cache)。libplacebo
+  // 把随输出尺寸变化的常量写死进着色器, 每个新尺寸 (第一次最大化 / 全屏)
+  // 都要现编, D3D11 走 FXC 很慢, 渲染线程卡住那一下就是黑屏。落盘后每个
+  // 尺寸这辈子只编一次。libmpv 不读配置目录, 不显式给路径缓存就是关的
+  const QByteArray shaderCacheDir = QDir::toNativeSeparators(
+      QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
+      "/mpv-shader-cache").toUtf8();
+  mpv_set_option_string(m_mpv, "gpu-shader-cache-dir",
+                        shaderCacheDir.constData());
   // 把随包思源黑体喂给 libass: 无样式字幕 (SRT) 与缺字回退默认用它,
   // 不再依赖系统雅黑。ASS 自带样式指定的字体不受影响。
   const QByteArray fontsDir =
@@ -107,7 +118,10 @@ MpvController::MpvController(QObject *parent) : QObject(parent) {
   // Creator) Suppress hevc decoder noise (e.g. "Multiple Dolby Vision RPUs in
   // one AU")
   mpv_set_option_string(m_mpv, "msg-level", "ffmpeg/hevc=error");
-  mpv_request_log_messages(m_mpv, "warn");
+  // 排查用: MFPLAYER_MPV_LOG=v 能看到 libplacebo 的 "Spent N ms compiling" 等耗时
+  const QByteArray logLevel = qgetenv("MFPLAYER_MPV_LOG");
+  mpv_request_log_messages(m_mpv,
+                           logLevel.isEmpty() ? "warn" : logLevel.constData());
 
   if (mpv_initialize(m_mpv) < 0) {
     qWarning() << "MpvController: mpv_initialize failed";

@@ -337,6 +337,12 @@ cmake --build /root/myproject/mfplayer/build
     别改回 QPixmap — 旧链路 QImage→QPixmap→toImage 每次请求多两次 ~1.5MB memcpy，缓存命中也逃不掉
   - ImageCacheResponse 解码跑 QThreadPool::globalInstance()。别改回每请求一个裸 std::thread
   - QImage 用 std::move 插入 LRU（避免 mutex 内拷贝）。别改回拷贝
+  - **mpv `gpu-shader-cache-dir` 别删** (2026-10)。libplacebo 把随输出尺寸变的常量 (polar 缩放的 compute
+    工作组 / 共享内存布局) 写死进着色器, 每个新窗口尺寸都要现编; D3D11 走 GLSL→SPIR-V→HLSL→FXC, 渲染线程
+    卡住那一下就是「第一次最大化 / 全屏黑半秒」(旧帧贴左上角 + 其余黑)。fork 的 libmpv gpu-next 路径原来
+    根本没接 pl_cache, 2026-10 补上 (libmpv_gpu_next.c, 照抄 vo_gpu_next.c 的 cache_*), 落盘到
+    CacheLocation/mpv-shader-cache, 每个尺寸这辈子只编一次。libmpv 不读配置目录, 不显式给路径缓存就是关的。
+    D3D11 上下文的 libplacebo 日志原来没挂回调全丢, 现走 mppl_log_create; 排查用 `MFPLAYER_MPV_LOG=v`
   - mpv hwdec=auto-safe（硬解优先、失败自动回落软解, 2026-07, DV P7.6 实测直通）。别改回 no — 4K HEVC/AV1 软解吃满 CPU
   - playItem: reportPlaybackStart 是 fire-and-forget, play() 不等上报回执。别套回回调里 — 白等一个 RTT
   - TabDefault 浏览: 首屏 kPageSize(200) 立即显示 + loadMore 自动渐进拉满（万部库全量 JSON 主线程解析是 100ms+ 卡顿）。
