@@ -1,9 +1,12 @@
 # build_mpv_msvc.ps1 - Build libmpv with MSVC via vcpkg dependencies
 # Run from: Developer PowerShell for VS 2022 (or equivalent MSVC environment)
-# Usage: .\tools\build_mpv_msvc.ps1 [-Clean]
+# Usage: .\tools\build_mpv_msvc.ps1 [-Clean] [-Release]
+#   -Release: 发版用 release 构建 (无调试信息, dll 更小); 默认 debugoptimized
+#             以便 WinDbg 对上符号。切换构建类型要配合 -Clean
 
 param(
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$Release
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,6 +26,7 @@ Write-Host "=== Building libmpv with MSVC ===" -ForegroundColor Cyan
 Write-Host "Project root: $ProjectRoot"
 Write-Host "vcpkg root:   $VcpkgRoot"
 Write-Host "MPV source:   $MpvSource"
+Write-Host "Build type:   $(if ($Release) { 'release' } else { 'debugoptimized' })"
 
 # Step 1: Install vcpkg dependencies
 Write-Host "`n=== Step 1: Installing vcpkg dependencies ===" -ForegroundColor Yellow
@@ -130,7 +134,7 @@ Write-Host "Resource compiler: $LlvmRc" -ForegroundColor Green
 $MesonArgs = @(
     "setup", $BuildDir,
     "--prefix=$InstallDir",
-    "--buildtype=debugoptimized",
+    "--buildtype=$(if ($Release) { 'release' } else { 'debugoptimized' })",
     "--pkg-config-path=$PkgConfigDir",
     "-Ddefault_library=shared",
     "-Dlibmpv=true",
