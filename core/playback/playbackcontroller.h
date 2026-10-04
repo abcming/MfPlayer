@@ -2,6 +2,7 @@
 #include <QObject>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QUrl>
 #include <QVariant>
 #include <QTimer>
 #include <QWindow>
@@ -53,6 +54,10 @@ public slots:
                   int audioIndex = -1, int subtitleIndex = -2);
     void playLocalFile(const QString &filePath);
     Q_INVOKABLE void scanFolderForLocalPlaylistAsync(const QString &filePath);
+    // 文件对话框 / 拖放给的是 URL, 别在 QML 里正则切 "file:///" 前缀:
+    // 那样 %5B%5D 之类的编码不解开 ([字幕组] 文件名直接 loading failed),
+    // file://server/share 也会被切成半截路径
+    Q_INVOKABLE QString localPathFromUrl(const QUrl &url) const;
     void pause();
     void resume();
     void stop();

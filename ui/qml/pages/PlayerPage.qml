@@ -905,11 +905,11 @@ Item {
             if (!drop.hasUrls) return
             var subExts = ["srt","ass","ssa","sub","vtt","idx","sup","smi"]
             for (var i = 0; i < drop.urls.length; i++) {
-                var path = drop.urls[i].toString().replace(/^file:\/{2,3}/, "")
+                var path = Playback.localPathFromUrl(drop.urls[i])
                 var ext = path.split('.').pop().toLowerCase()
                 if (subExts.indexOf(ext) >= 0) {
                     var fileName = path.split('/').pop().split('\\').pop()
-                    Playback.addSubtitleFile("file://" + path, fileName, "")
+                    Playback.addSubtitleFile(path, fileName, "")
                 }
             }
         }

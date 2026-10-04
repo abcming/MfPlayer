@@ -299,6 +299,10 @@ void PlaybackController::onNextUpFetched(const QJsonObject &episode, const QStri
     emit seriesEntryResolved(seriesId, episode);
 }
 
+QString PlaybackController::localPathFromUrl(const QUrl &url) const {
+    return url.isLocalFile() ? url.toLocalFile() : url.toString();
+}
+
 void PlaybackController::playLocalFile(const QString &filePath) {
     ++m_playGeneration;  // cancel in-flight playItem callbacks (fetchPlaybackInfo)
     reportStopForCurrent();  // 若正在播 Emby 条目, 先结束其 PlaySession

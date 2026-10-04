@@ -1337,7 +1337,7 @@ HdrPqOverlay {
         title: Str.fileDialogTitle
         nameFilters: [Str.fileFilterVideo, Str.fileFilterAll]
         onAccepted: {
-            var path = selectedFile.toString().replace(/^file:\/{2,3}/, "")
+            var path = Playback.localPathFromUrl(selectedFile)
             Nav.pushPlayer({
                 localFile: path,
                 episodeTitle: path.split('/').pop().split('\\').pop(),
@@ -1379,7 +1379,7 @@ HdrPqOverlay {
             var videoExts = ["mp4","mkv","avi","mov","wmv","flv","webm",
                              "mpg","mpeg","m2ts","ts","m4v","3gp","ogv"]
             for (var i = 0; i < drop.urls.length; i++) {
-                var path = drop.urls[i].toString().replace(/^file:\/{2,3}/, "")
+                var path = Playback.localPathFromUrl(drop.urls[i])
                 var ext = path.split('.').pop().toLowerCase()
                 if (videoExts.indexOf(ext) >= 0) {
                     Nav.pushPlayer({
