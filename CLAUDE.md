@@ -346,6 +346,10 @@ cmake --build /root/myproject/mfplayer/build
     根本没接 pl_cache, 2026-10 补上 (libmpv_gpu_next.c, 照抄 vo_gpu_next.c 的 cache_*), 落盘到
     CacheLocation/mpv-shader-cache, 每个尺寸这辈子只编一次。libmpv 不读配置目录, 不显式给路径缓存就是关的。
     D3D11 上下文的 libplacebo 日志原来没挂回调全丢, 现走 mppl_log_create; 排查用 `MFPLAYER_MPV_LOG=v`
+  - **fork 的 pl_video_render 在目标纹理没有 blit_dst 时跳过清屏 (`skip_target_clearing`), 别删** (2026-10)。
+    Qt 的 D3D11 后台缓冲区包进来没有 blit_dst, 视频留黑边时 libplacebo 用 pl_tex_clear 清屏必定校验失败;
+    日志接上回调后每帧报一次错 + 符号化调用栈 (Windows 上约 45 ms), D3D11 下 UI 被拖到视频帧率。
+    Qt 自己每帧清后台缓冲区, 跳过无副作用。教训: 接通一路日志后先扫一遍有没有每帧都在刷的错误
   - mpv hwdec=auto-safe（硬解优先、失败自动回落软解, 2026-07, DV P7.6 实测直通）。别改回 no — 4K HEVC/AV1 软解吃满 CPU
   - playItem: reportPlaybackStart 是 fire-and-forget, play() 不等上报回执。别套回回调里 — 白等一个 RTT
   - TabDefault 浏览: 首屏 kPageSize(200) 立即显示 + loadMore 自动渐进拉满（万部库全量 JSON 主线程解析是 100ms+ 卡顿）。
