@@ -122,6 +122,10 @@ private:
     bool m_sleepInhibited = false;
 #endif
     bool m_eofReached = false;  // eof-reached 边沿检测, 防 endOfFile 重复触发
+    // 设置里的 HDR 峰值只在 HDR 输出时交给 mpv; SDR 时 target-peak 必须是 auto,
+    // 见 updateHdrDisplayActive。启动到检测完成之间按 HDR 算 (同 target-trc=pq)
+    int m_targetPeak = 1000;
+    bool m_hdrDisplay = true;
     std::atomic<bool> m_hasVideo{false};
     // m_volume / m_speed 只由 mpv 的属性观察事件更新 —— 它们是"mpv 现在是什么",
     // 初值取 libmpv 的默认值, 别写成 UI 想要的值 (那会让 getter 在首个事件回来前撒谎)

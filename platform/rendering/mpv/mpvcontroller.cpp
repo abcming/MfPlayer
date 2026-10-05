@@ -411,7 +411,8 @@ void MpvController::setSpeed(double speed) {
 }
 
 void MpvController::setTargetPeak(int nits) {
-  if (!m_mpv)
+  m_targetPeak = nits;
+  if (!m_mpv || !m_hdrDisplay)  // SDR 输出时不交给 mpv, 切回 HDR 时再补
     return;
   QByteArray val = QByteArray::number(nits);
   const char *data = val.constData();
@@ -429,17 +430,26 @@ void MpvController::updateHdrDisplayActive(bool active) {
   if (!m_mpv)
     return;
 
+  m_hdrDisplay = active;
   if (active) {
     // HDR display: output PQ into BT.2020 container
     mpv_set_property_string(m_mpv, "target-trc", "pq");
     mpv_set_property_string(m_mpv, "target-prim", "bt.2020");
+    mpv_set_property_string(m_mpv, "target-peak",
+                            QByteArray::number(m_targetPeak).constData());
   } else {
-    // SDR display: output sRGB into BT.709 — matches the 8-bit SDR swapchain
-    mpv_set_property_string(m_mpv, "target-trc", "srgb");
+    // SDR display: BT.709 container, transfer left on auto. fork 的
+    // libmpv gpu-next 在 auto 时照搬片源的 SDR 传递函数 (同上游
+    // sdr-adjust-gamma=auto)。别写死 srgb: 那会把 BT.1886 片源换算成
+    // sRGB, 暗部压掉一半, 不开 HDR 看片比别的播放器暗很多 (2026-10)
+    mpv_set_property_string(m_mpv, "target-trc", "auto");
     mpv_set_property_string(m_mpv, "target-prim", "bt.709");
+    // target-peak 也要回 auto。留着设置里的 HDR 峰值 (默认 1000), libplacebo
+    // 会当成一块 1000 尼特的 SDR 屏, 把片源的白 (203 尼特) 映射到两成亮度,
+    // 视频和 mpv 自己画的 OSD 整体暗一半 (2026-10, 以前注释写「SDR 时 peak
+    // 无关」是错的)
+    mpv_set_property_string(m_mpv, "target-peak", "auto");
   }
-  // target-peak is managed separately via setTargetPeak / settings store.
-  // When SDR, the srgb transfer function makes peak irrelevant.
 }
 
 void MpvController::pause() {
