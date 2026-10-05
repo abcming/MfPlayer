@@ -212,6 +212,9 @@ ioPool().start([guard, ...]() {
 - `modelData` 和 `index` 必须通过 `required property` 获取, 不依赖隐式上下文
 - Loader 加载的 Component 内部元素需要的数据通过外层的 id 引用 (如 `trackItem.modelData`)
 - 颜色用 `Theme.xxx`, 字符串用 `Str.xxx`, 导航用 `Nav.xxx`
+- **显示文字用 `Label`, 别用裸 `Text`** (含 `contentItem: Text`)。Main.qml 窗口上的 `font.family` (思源黑体) 只沿 Controls 传给
+  Label/Button 等, 裸 Text 拿不到, 落回系统默认字体, 汉字再由 Windows 按字找替补字体: 日文字形里有的字走日文字体、
+  其余走中文字体, 同一行粗细明暗交错 (2026-10 侧栏库列表 + 服务器菜单就是这样)
 - 属性链很深 (如 `Server.settings.hdrPeakBrightness`) — 这是已知模式, 不要"优化"掉
 
 ## 架构债务 (已知, 等时机)

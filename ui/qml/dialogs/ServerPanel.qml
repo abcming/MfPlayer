@@ -184,7 +184,7 @@ StyledPopup {
                 radius: 4
                 color: parent.hovered ? Theme.active : "transparent"
             }
-            contentItem: Text {
+            contentItem: Label {
                 text: Str.svrSettings
                 color: parent.hovered ? Theme.primary : Theme.textSecondary
                 font.pixelSize: 13
@@ -204,7 +204,7 @@ StyledPopup {
                 radius: 4
                 color: parent.hovered ? Theme.active : "transparent"
             }
-            contentItem: Text {
+            contentItem: Label {
                 text: Str.svrPlayLocalFile
                 color: parent.hovered ? Theme.primary : Theme.textSecondary
                 font.pixelSize: 13
@@ -223,7 +223,7 @@ StyledPopup {
                 radius: 4
                 color: parent.hovered ? Theme.active : "transparent"
             }
-            contentItem: Text {
+            contentItem: Label {
                 text: Str.svrRefreshCache
                 color: parent.hovered ? Theme.primary : Theme.textSecondary
                 font.pixelSize: 13
@@ -243,7 +243,7 @@ StyledPopup {
                 radius: 4
                 color: parent.hovered ? Theme.active : "transparent"
             }
-            contentItem: Text {
+            contentItem: Label {
                 text: Str.svrDisconnect
                 color: parent.hovered ? Theme.errorRed : Theme.textSecondary
                 font.pixelSize: 13

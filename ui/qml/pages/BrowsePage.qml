@@ -661,7 +661,7 @@ HdrPqOverlay {
                         text: itemName || "?"
                         hoverEnabled: true
 
-                        contentItem: Text {
+                        contentItem: Label {
                             text: parent.text
                             color: parent.hovered ? Theme.primary : Theme.textSecondary
                             elide: Text.ElideRight
@@ -1350,7 +1350,7 @@ HdrPqOverlay {
         visible: _lastError !== ""
         opacity: visible ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 200 } }
-        Text {
+        Label {
             id: errorText
             anchors.centerIn: parent
             text: _lastError
